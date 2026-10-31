@@ -10,14 +10,46 @@ Version 0.1:
   - a FM-1 screen (MORE > PLUG-INS > FM-1): the FM-1s it has found
 Not yet: the FM-1 library (backups, projects, sample slots, firmware).
 
-A Clipper (Clipper firmware on an SMK-37) is a keyboard here, not an FM-1. The FM-1 Companion's own rule treats it
-as an FM-1 when no other is plugged in; that's left for later.
+A Clipper (isod89's Clipper firmware, on an FM-1 or on M-Vave's SMK-37 keyboard, under the same name and USB ID)
+follows the FM-1 Companion's rule for its sound: it's the FM-1 only when no other FM-1 (Felucca, SLOOP) is plugged
+in; next to one it's an instrument, a mixer channel of its own (the FM-1 Companion's sloop.fm1_cards). Its MIDI is a
+keyboard either way, and two FM-1s get A and B in the order the Studio finds them, not by USB port: both wait for the
+Studio's plug-in API to name devices by sound card.
 """
+import re
+from pathlib import Path
+
 API = 1
 
 FM1_SOUND = r"felucca|sloop|fm-1|fm1|m-vave"    # in a USB sound card's names (the FM-1 Companion's source_match)
 FM1_MIDI = r"^(felucca|sloop|fm-1|fm1)\b"       # an FM-1's ALSA MIDI client name ("Felucca", "SLOOP")
+FM1_CARD = r"felucca|sloop|fm-1|fm1"            # a real FM-1 (not a Clipper) in /proc/asound/cards
+CARDS = Path("/proc/asound/cards")
 LETTERS = "ABCDEFGH"
+
+
+def real_fm1_plugged(text=None):
+    """is an FM-1 other than a Clipper (Felucca, SLOOP) plugged in? From /proc/asound/cards (False without it)"""
+    if text is None:
+        try:
+            text = CARDS.read_text(errors="replace")
+        except OSError:
+            return False
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if not re.match(r"\s*\d+ \[", line):
+            continue
+        both = f"{line} {lines[i + 1] if i + 1 < len(lines) else ''}".lower()
+        if "usb-audio" in both and re.search(FM1_CARD, both) and "clipper" not in both:
+            return True
+    return False
+
+
+def is_fm1(text):
+    """a sound source's names -> is it an FM-1? A Clipper only when no other FM-1 is plugged in"""
+    if re.search(FM1_SOUND, text, re.I):
+        return True
+    return bool(re.search(r"clipper", text, re.I)) and not real_fm1_plugged()
 
 
 def fm1_name(n):
@@ -54,7 +86,7 @@ class FM1Screen:
 
 
 def setup(studio):
-    studio.add_audio_source(FM1_SOUND, fm1_name)
+    studio.add_audio_source(is_fm1, fm1_name)
     studio.add_midi_device(FM1_MIDI, "FM-1 {n}")
     studio.add_screen("FM-1", FM1Screen)
-    studio.add_web(status=lambda: {"version": "0.1.0"})
+    studio.add_web(status=lambda: {"version": "0.1.1"})
