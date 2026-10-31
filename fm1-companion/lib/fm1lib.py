@@ -24,6 +24,7 @@ Studio has its own samples, recordings and SD import, and its own updates.
   fm1lib.py fetch sloop|clipper       download the newest SLOOP or Clipper release into ~/fm1-library/firmware
   fm1lib.py identify                  what the FM-1 runs ("SLOOP 2.8"), as a job
   fm1lib.py info                      what the FM-1 runs, as JSON
+  fm1lib.py label                     what the FM-1 runs in a few words ("SLOOP 2.8", or its USB name), quietly
   fm1lib.py list                      the library as JSON
 
 Progress and the result go to $XDG_RUNTIME_DIR/fm1-companion-job.json (the plug-in reads it); one job runs at a
@@ -173,9 +174,33 @@ def firmware_label():
     """"SLOOP 2.8" from what the FM-1 last said ("FELUCCA SLOOP 2.8"); None if nothing has asked it yet. Its
     USB name says Felucca whatever it runs."""
     try:
-        words = str(json.loads(FIRMWARE.read_text())["firmware"]).split()
+        return short_label(json.loads(FIRMWARE.read_text())["firmware"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def label():
+    """what this FM-1 runs, for the Studio's HOME ("SLOOP 2.8"): asked over its editor SysEx, else (a firmware
+    that doesn't answer it: stock, Felucca) its sound card's USB name ("FELUCCA"); None without the FM-1"""
+    try:
+        return short_label(str(sloop.Sloop(sloop.Link(card=target_card())).version))
+    except sloop.SloopError:
+        pass
+    cards, text = sloop.fm1_cards(), ""
+    try:
+        text = sloop.CARDS.read_text(errors="replace")
+    except OSError:
+        pass
+    n = LETTERS.index(FM1)
+    if n >= len(cards):
+        return None
+    m = re.search(rf"^\s*{cards[n]} \[([^\]]+?)\s*\]", text, re.M)       # " 3 [Felucca_1      ]": FELUCCA
+    return re.sub(r"_\d+$", "", m.group(1)).upper()[:16] if m else None
+
+
+def short_label(firmware):
+    """"FELUCCA SLOOP 2.8" -> "SLOOP 2.8" (its USB name says Felucca whatever it runs)"""
+    words = str(firmware).split()
     if len(words) > 1 and words[0].upper() == "FELUCCA" and not any(c.isdigit() for c in words[1]):
         words = words[1:]
     return " ".join(w if any(c.isdigit() for c in w) or w.upper() == "SLOOP" else w.capitalize()
@@ -531,6 +556,8 @@ def main(argv=None):
             with Job("identify") as job:
                 dev = connect()
                 job.done(firmware_label() or str(dev.version))
+        elif command == "label":              # quietly: no job, no state file (the plug-in's HOME detail)
+            print(label() or "")
         elif command == "info":
             dev = connect()
             print(json.dumps({**dev.info, "can_backup": dev.can_backup()}))
