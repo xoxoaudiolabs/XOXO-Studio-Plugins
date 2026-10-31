@@ -6,7 +6,7 @@ API they use, is in XOXO Studio's `docs/PLUGINS.md` and its `fm1-bt-bridge/plugi
 
 | Plug-in | Version | What it does |
 |---|---|---|
-| [fm1-companion](fm1-companion/) | 0.1.0 | The FM-1 on the Studio: FM-1 A and FM-1 B as sound sources in the mixer and as MIDI devices in the routes, the FM-1 keeping the clock. The FM-1 library (backups, projects, sample slots, firmware) comes in a later version |
+| [fm1-companion](fm1-companion/) | 0.1.1 | The FM-1 on the Studio: FM-1 A and FM-1 B as sound sources in the mixer and as MIDI devices in the routes, the FM-1 keeping the clock. A Clipper is the FM-1's sound when no other FM-1 is plugged in. The FM-1 library (backups, projects, sample slots, firmware) comes in a later version |
 
 XOXO Studio's default plug-ins (XO-4, the DJ decks, the Pocket link, the computer link) aren't here: they come
 with the Studio.
@@ -29,6 +29,8 @@ same page. A plug-in that has a problem is switched off by the Studio, with a me
 - **fm1-companion 0.1.0** (2026-10-31): on a PC with XOXO Studio's own code and stand-in devices: it's found,
   switched on, names two FM-1 sound sources FM-1 A and FM-1 B (their mixer keys `u-fm1a`, `u-fm1b`), and its
   screen draws. **Not yet tried on a Studio with a real FM-1**.
+- **fm1-companion 0.1.1** (2026-10-31): on a PC, as 0.1.0, plus: a Clipper is FM-1 A's sound when it's the only
+  FM-1, and its own mixer channel next to a Felucca or SLOOP one. **Not yet tried on a Studio with a real FM-1**.
 
 ## License
 
