@@ -6,7 +6,7 @@ API they use, is in XOXO Studio's `docs/PLUGINS.md` and its `fm1-bt-bridge/plugi
 
 | Plug-in | Version | What it does |
 |---|---|---|
-| [fm1-companion](fm1-companion/) | 0.3.0 | The FM-1 on the Studio: up to four FM-1s, FM-1 A to D by USB port, as sound sources in the mixer and MIDI devices in the routes, the FM-1 keeping the clock. A Clipper is an FM-1 only when no other FM-1 is plugged in. The FM-1 library on its screen (MORE › PLUG-INS › FM-1) and the web page: backups, projects, songs, sample slots, DX7 patches and firmware, the FM-1 Companion's own jobs. Card names and the web page need a Studio with the plug-in additions to API 1 |
+| [fm1-companion](fm1-companion/) | 0.4.0 | The FM-1 on the Studio: up to four FM-1s, FM-1 A to D by USB port, as sound sources in the mixer and MIDI devices in the routes, the FM-1 keeping the clock; a linked Pocket's three as FM-1 E to G, its library jobs run through the Pocket. A Clipper is an FM-1 only when no other FM-1 is plugged in. The FM-1 library on its screen (MORE › PLUG-INS › FM-1) and the web page: backups, projects, songs, sample slots, DX7 patches and firmware, the FM-1 Companion's own jobs. Card names and the web page need a Studio with the plug-in additions to API 1 |
 
 XOXO Studio's default plug-ins (XO-4, the DJ decks, the Pocket link, the computer link) aren't here: they come
 with the Studio.
@@ -40,6 +40,11 @@ same page. A plug-in that has a problem is switched off by the Studio, with a me
   routes, the SMK-37 a keyboard; a lone Clipper is FM-1 A; four FM-1s are A-D and a fifth has no letter; a write
   the web page asks for waits for the Studio's hold; the web page's Library shows the plug-in's job and files and
   sends its commands. **Not yet tried on a Studio with a real FM-1**.
+- **fm1-companion 0.4.0** (2026-10-31): on a PC, against the FM-1 Companion Pocket's own web server (its jobs
+  pretended, `tests/pocket_server.py`): FM-1 E and F are the Pocket's A and B; a backup on E comes back into the
+  Studio's library; a restore on F sends the backup first, runs confirmed, and its safety backup comes back; a
+  file that can't be sent is an error. **Not yet tried with a real Pocket**, and the Studio's side of E-G (its
+  receivers, sources, MIDI sessions, `pocket()`) is still to be built in XOXO Studio.
 
 ### On the Studio, with two FM-1s and the SMK-37 Pro
 
@@ -60,9 +65,10 @@ python -m pytest tests
 
 ## The FM-1 library: what's next
 
-- **A linked Pocket's FM-1s as FM-1 E-G**: up to three on a Pocket, so seven with a Studio's four, each in the
-  Studio's mixer, MIDI routes and library. The link carries one network MIDI session and one mixed sound today,
-  and the Pocket's library goes up to two FM-1s, so this needs the Pocket's side first (`FM-1-Companion`).
+- **A linked Pocket's FM-1s as FM-1 E-G**: the plug-in's side is here (0.4.0), the Pocket's is built in
+  `FM-1-Companion` (not committed). XOXO Studio still needs: receivers for the Pocket's three streams (UDP
+  46002/46004/46006), those as mixer sources while linked, each "... Pocket FM-1 A/B/C" network MIDI session its
+  own device in the routes, `"pocket_fm1s": true` in its status, and `pocket()` (the Pocket's address) for plug-ins.
 - **The FM-1's MIDI while a job runs**: the Studio's MIDI routes hold the FM-1's port too; on a real Studio, check
   a backup and a firmware install don't trip over them.
 - **The shared page**: XOXO Studio's `web.py` page now differs from the FM-1 Companion's copy (the Studio-only

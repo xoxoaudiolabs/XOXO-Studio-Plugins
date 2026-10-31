@@ -4,7 +4,11 @@ The Pocket (xoxoaudiolabs/FM-1-Companion) is the FM-1-focused box; this plug-in 
   - up to four FM-1s on the Studio's USB (Felucca, SLOOP or FM-1 firmware), FM-1 A to FM-1 D by USB port (A: the
     lowest), as the Pocket names them (its sloop.fm1_cards): each a sound source in the Studio's mixer (HOME, MIXER,
     recordings) and a MIDI device in the routes under the same name, both ways (its notes and clock to the other
-    devices, theirs and the Studio's clock to it). E to G are kept for a linked Pocket's (not yet: FM-1-Companion)
+    devices, theirs and the Studio's clock to it)
+  - a linked Pocket's FM-1s (its A-C) as FM-1 E-G (0.4): their own streams (sources fm1-pocket-a/b/c) and network
+    MIDI sessions ("... Pocket FM-1 A") named so, and the library's jobs on them run through the Pocket's web API
+    (files sent there first; writes held on the Studio's screen, then sent confirmed; backups copied back here).
+    Needs the Pocket's side (FM-1-Companion) and a Studio with pocket() and the Pocket's sources and sessions
   - the FM-1 keeps the clock when it's plugged in (the Studio's WirePlumber rule, already there: priority.driver)
   - the FM-1 screen (MORE > PLUG-INS > FM-1): the FM-1s it has found, and the FM-1 library (0.2): backups,
     projects, songs, sample slots, DX7 patches and firmware in ~/fm1-library, the Pocket's own jobs (lib/fm1lib.py)
@@ -28,16 +32,21 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 API = 1
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 FM1_SOUND = r"felucca|sloop|fm-1|fm1|m-vave"    # in a USB sound card's names (the FM-1 Companion's source_match)
 FM1_MIDI = r"^(felucca|sloop|fm-1|fm1)\b"       # an FM-1's ALSA MIDI client name ("Felucca", "SLOOP")
 FM1_CARD = ("felucca", "sloop", "fm-1", "fm1", "clipper")    # in /proc/asound/cards (sloop.PORT_MATCH)
 CARDS = Path("/proc/asound/cards")
 LETTERS = "ABCD"                                # the Studio's own FM-1s (E-G: a linked Pocket's)
+POCKET = {"E": "A", "F": "B", "G": "C"}         # a linked Pocket's FM-1s on the Studio: the Pocket's A-C
+ALL_LETTERS = LETTERS + "".join(POCKET)
 
 
 def read_cards():
@@ -143,6 +152,8 @@ class Library:
         self.waiting = 0.0                      # when a write the web page asked for went to the Studio's screen
         self.listing, self.listed, self.listing_at, self.lister = {}, None, 0.0, None
         self.fm1s = min(len(fm1_cards()), len(LETTERS))
+        self.remote = None                      # the job on a linked Pocket's FM-1 (E-G), as the Pocket says it
+        self.pocket_fm1s, self.pocket_asked, self.asker = [], 0.0, None   # the Pocket's FM-1s plugged in: "A"-"C"
 
     def read(self):
         try:
@@ -157,8 +168,11 @@ class Library:
 
     def tick(self):
         self.fm1s = min(len(fm1_cards()), len(LETTERS))
+        self.ask_pocket()
         self.list_if_changed()
         job = self.read()
+        if self.remote and (not job or self.remote.get("started", 0) >= job.get("started", 0)):
+            job = self.remote                   # the newer of the two: the Studio's own, or the Pocket's
         if job == self.job:
             return
         was, self.job = self.job, job
@@ -187,16 +201,44 @@ class Library:
         self.lister.start()
 
     def busy(self):
-        return (self.job or {}).get("state") == "running" or time.monotonic() - self.started < 3
+        return (any((job or {}).get("state") == "running" for job in (self.job, self.remote))
+                or time.monotonic() - self.started < 3)
 
     def which(self):
-        """the FM-1 the library works on with two or more plugged in: A (the lowest USB port) to D"""
+        """the FM-1 the library works on: A (the lowest USB port) to D, or a linked Pocket's E-G"""
         which = self.studio.settings.get("library_fm1")
-        return which if isinstance(which, str) and len(which) == 1 and which in LETTERS else "A"
+        return which if isinstance(which, str) and len(which) == 1 and which in ALL_LETTERS else "A"
+
+    def letters(self):
+        """the FM-1s there are now: the Studio's own, then a linked Pocket's"""
+        return list(LETTERS[:self.fm1s]) + [x for x, p in POCKET.items() if p in self.pocket_fm1s]
+
+    def pocket(self):
+        """the linked Pocket's address, or None (a Studio without the Pocket additions to its API: None)"""
+        return self.studio.pocket() if hasattr(self.studio, "pocket") else None
+
+    def ask_pocket(self):
+        """which FM-1s the linked Pocket has (its /api/status), every 10 s, in the background"""
+        address = self.pocket()
+        if not address:
+            self.pocket_fm1s = []
+            return
+        if time.monotonic() - self.pocket_asked < 10 or (self.asker and self.asker.is_alive()):
+            return
+        self.pocket_asked = time.monotonic()
+
+        def run():
+            try:
+                fm1s = pocket_call(address, "/api/status").get("fm1s") or []
+                self.pocket_fm1s = [x for x in fm1s if x in POCKET.values()]
+            except PocketError:
+                self.pocket_fm1s = []
+        self.asker = threading.Thread(target=run, daemon=True)
+        self.asker.start()
 
     def use(self, which):
-        if len(which) != 1 or which not in LETTERS:
-            return f"FM-1 {LETTERS[0]} to {LETTERS[-1]}"
+        if len(which) != 1 or which not in ALL_LETTERS:
+            return f"FM-1 {ALL_LETTERS[0]} to {ALL_LETTERS[-1]}"
         self.studio.settings["library_fm1"] = which
         self.studio.save()
         return f"The library works on FM-1 {which}"
@@ -209,6 +251,8 @@ class Library:
         """fm1lib.py args in the background -> an error message, or None"""
         if self.busy():
             return "a library job is running"
+        if self.which() in POCKET and args[0] != "fetch":      # (firmware is always fetched by the Studio)
+            return self.start_remote(args)
         command = [sys.executable, str(LIB), "--fm1", self.which(), "--level", self.level(), *map(str, args)]
         if shutil.which("systemd-run"):
             command = ["systemd-run", "--user", "--collect", "--quiet", f"--unit=fm1-companion-{time.time_ns()}",
@@ -220,8 +264,66 @@ class Library:
         self.started, self.waiting = time.monotonic(), 0.0
         return None
 
+    def start_remote(self, args):
+        """a job on a linked Pocket's FM-1 (E-G: its A-C), through its web API: the files it needs uploaded, then
+        /api/run (a read) or /api/ask confirmed (a write: already held on the Studio's screen); its /api/state
+        followed; a backup it made copied back into the Studio's library -> an error message, or None"""
+        address, letter = self.pocket(), self.which()
+        if not address:
+            return "no Pocket linked"
+        if POCKET[letter] not in self.pocket_fm1s:
+            return f"FM-1 {letter} isn't plugged into the Pocket"
+        try:
+            uploads, endpoint, body = remote_plan(args)
+        except (ValueError, IndexError) as e:
+            return str(e) or "not a job for the Pocket"
+        body = dict(body, fm1=POCKET[letter], **({"confirmed": True} if endpoint == "ask" else {}))
+        self.remote = {"job": str(args[0]), "state": "running", "step": "Sending to the Pocket", "percent": None,
+                       "message": "", "started": time.time(), "fm1": letter}
+        self.job, self.waiting = self.remote, 0.0
+        threading.Thread(target=self.run_remote, args=(address, uploads, endpoint, body), daemon=True).start()
+        return None
+
+    def run_remote(self, address, uploads, endpoint, body, poll=1.0, patience=20):
+        job = self.remote
+        try:
+            for folder, path in uploads:
+                job["step"] = f"Sending {path.name[:24]}"
+                pocket_call(address, f"/api/upload?folder={folder}&name={urllib.parse.quote(path.name)}",
+                            data=path.read_bytes())
+            before = pocket_call(address, "/api/state")
+            before = (before.get("started"), before.get("finished"))
+            pocket_call(address, f"/api/{endpoint}", body)
+            waited = 0.0
+            while True:                         # the Pocket's job: running, then done or failed
+                time.sleep(poll)
+                state = pocket_call(address, "/api/state")
+                if (state.get("started"), state.get("finished")) == before and state.get("state") != "running":
+                    waited += poll
+                    if waited > patience:
+                        raise PocketError("the Pocket didn't start the job")
+                    continue
+                if state.get("state") != "running":
+                    break
+                job.update(step=f"{state.get('step') or 'Working'} (Pocket)", percent=state.get("percent"))
+            if state.get("state") != "done":
+                raise PocketError(state.get("message") or "the job failed on the Pocket")
+            result = state.get("result") or {}
+            made = (("songs" if job["job"] == "song-backup" else "backups", result.get("file")),
+                    ("backups", result.get("before")))         # a backup, a song, a write's safety backup
+            for folder, name in made:           # copied back: the Studio's library stays the one place
+                if job["job"] in ("backup", "song-backup") or folder == "backups" and name == result.get("before"):
+                    if isinstance(name, str) and name and Path(name).name == name:
+                        data = pocket_call(address, f"/files/{folder}/{urllib.parse.quote(name)}", raw=True)
+                        (LIBRARY / folder).mkdir(parents=True, exist_ok=True)
+                        (LIBRARY / folder / name).write_bytes(data)
+            job.update(state="done", message=f"Pocket FM-1 {job['fm1']}: {state.get('message') or 'done'}"[:120],
+                       percent=100, finished=time.time(), result=result)
+        except (PocketError, OSError, ValueError) as e:
+            job.update(state="error", message=f"Pocket FM-1 {job['fm1']}: {e}"[:120], finished=time.time())
+
     def web_status(self):
-        return {"version": VERSION, "library_fm1": self.which(), "fm1s": list(LETTERS[:self.fm1s]), "job": self.job,
+        return {"version": VERSION, "library_fm1": self.which(), "fm1s": self.letters(), "job": self.job,
                 "waiting": bool(self.waiting) and time.monotonic() - self.waiting < 120,
                 "library": self.listing, "library_at": self.listing_at}
 
@@ -244,7 +346,7 @@ class Library:
             return "this Studio can't ask for a confirmation: update it"
         if self.busy():
             return "a library job is running"
-        command, fm1 = r.get("cmd"), f"FM-1 {self.which()}"
+        command, fm1 = r.get("cmd"), f"FM-1 {self.which()}" + (" (Pocket)" if self.which() in POCKET else "")
         if command == "restore":
             path = library_file("backups", r.get("file"))
             if not path:
@@ -290,6 +392,66 @@ class Library:
         self.studio.confirm(title, lines, lambda: self.studio.say(self.start(args) or "Started", 2))
         self.waiting = time.monotonic()
         return "Confirm on the Studio: hold 2 s"
+
+
+class PocketError(Exception):
+    pass
+
+
+def pocket_call(address, path, body=None, data=None, raw=False, timeout=30):
+    """the linked Pocket's web API (http://address/...): a JSON body or raw data POSTed, else a GET -> its JSON
+    (raw: the bytes). A refusal ({"ok": false, "message"}) or no answer is a PocketError with the reason"""
+    request = urllib.request.Request(f"http://{address}{path}", method="POST" if body is not None or data else "GET",
+                                     data=json.dumps(body).encode() if body is not None else data)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as reply:
+            got = reply.read()
+    except urllib.error.HTTPError as e:
+        try:
+            message = json.loads(e.read()).get("message")
+        except (ValueError, AttributeError, OSError):
+            message = None
+        raise PocketError(message or f"the Pocket said {e.code}")
+    except (OSError, ValueError) as e:
+        raise PocketError(f"the Pocket isn't answering ({e})"[:80])
+    if raw:
+        return got
+    try:
+        answer = json.loads(got)
+    except ValueError:
+        raise PocketError("the Pocket's answer wasn't JSON")
+    if isinstance(answer, dict) and answer.get("ok") is False:
+        raise PocketError(answer.get("message") or "the Pocket said no")
+    return answer if isinstance(answer, dict) else {}
+
+
+def remote_plan(args):
+    """fm1lib.py's job args -> (the files the Pocket needs [(folder, path)], "run" or "ask", the request): the
+    Pocket's web API names (its web.py run and ask)"""
+    command, rest = str(args[0]), [Path(a) if isinstance(a, Path) else a for a in args[1:]]
+    if command in ("backup", "song-backup"):
+        return [], "run", {"cmd": command}
+    if command == "restore":
+        return [("backups", rest[0])], "ask", {"cmd": "restore", "file": rest[0].name}
+    if command == "load-project":
+        path, source, target = rest[0], str(rest[1]), str(rest[2])
+        folder = path.parent.name
+        return [(folder, path)], "ask", {"cmd": "load-project", "folder": folder, "file": path.name,
+                                         "source": source, "target": target}
+    if command == "song-load":
+        return [("songs", rest[0])], "ask", {"cmd": "load-song", "file": rest[0].name}
+    if command == "dx7-send":
+        voice = int(rest[1]) if len(rest) > 1 else None
+        return [("patches", rest[0])], "ask", {"cmd": "dx7-send", "file": rest[0].name, "voice": voice}
+    if command == "load-sample":
+        slot, name, paths = int(rest[0]), str(rest[1]), [Path(p) for p in rest[2:]]
+        return [("samples", p) for p in paths], "ask", {"cmd": "load-sample", "files": [p.name for p in paths],
+                                                         "slot": slot, "name": name}
+    if command == "flash":
+        return [("firmware", rest[0])], "ask", {"cmd": "flash", "file": rest[0].name}
+    raise ValueError(f"{command}: not a job for the Pocket")
 
 
 def library_file(folder, name):
@@ -399,16 +561,17 @@ class FM1Screen:
             return self.draw_page(img, d)
         ui, t = self.ui, self.ui.theme
         fm1s = self.found()
-        letters = [name[-1] for name in fm1s if name[-1] in LETTERS]
+        letters = [name[-1] for name in fm1s if name[-1] in ALL_LETTERS]
         if not fm1s:
             ui.centre(img, (0, 40, 480, 70), "NO FM-1 PLUGGED IN: PLUG ONE INTO A USB PORT", t.c[3])
         elif len(letters) < 2:
             ui.centre(img, (0, 40, 480, 70), "   ".join(fm1s) + "  (MIXER + MIDI ROUTES)", t.hi)
-        else:                                   # which one the library works on: A (the lowest USB port) to D
+        else:                                   # which one the library works on: A-D the Studio's, E-G a Pocket's
             ui.centre(img, (4, 40, 96, 70), "LIBRARY", t.c[3])
-            for i, which in enumerate(letters[:4]):
-                ui.button(img, d, (100 + i * 94, 40, 190 + i * 94, 70), f"FM-1 {which}",
-                          lambda w=which: self.set_fm1(w), on=self.lib.which() == which, key=f"fm1-lib-{which}")
+            w = 376 // len(letters[:7])
+            for i, which in enumerate(letters[:7]):
+                ui.button(img, d, (100 + i * w, 40, 96 + (i + 1) * w, 70), f"FM-1 {which}" if w >= 80 else which,
+                          lambda x=which: self.set_fm1(x), on=self.lib.which() == which, key=f"fm1-lib-{which}")
         for i, (label, page) in enumerate(MENU):
             x, y = 4 + (i % 4) * 118, 78 + (i // 4) * 48
             action = (lambda p=page: self.open(p)) if page else (lambda: self.run(["backup"]))
@@ -469,6 +632,9 @@ def setup(studio):
     library = Library(studio)
     if hasattr(studio, "add_card_names"):       # FM-1 A-D by USB port, the same in the mixer and the MIDI routes
         studio.add_card_names(card_names)
+        for letter, theirs in POCKET.items():   # a linked Pocket's FM-1s: their own stream and network MIDI session
+            studio.add_audio_source(rf"\bfm1-pocket-{theirs.lower()}\b", f"FM-1 {letter}")
+            studio.add_midi_device(rf"Pocket FM-1 {theirs}$", f"FM-1 {letter}")
     else:                                       # (an older Studio: in the order it finds them)
         studio.add_audio_source(is_fm1, fm1_name)
         studio.add_midi_device(FM1_MIDI, "FM-1 {n}")

@@ -3,6 +3,7 @@ stand-in devices. Needs a clone of XOXO Studio next to this repository (or $XOXO
 
   python -m pytest tests
 """
+import copy
 import json
 import os
 import sys
@@ -35,7 +36,7 @@ class RgbCapture:
 
 
 def studio_with_plugin(others):
-    app = bridge.App(RgbCapture(), dict(bridge.DEFAULTS))
+    app = bridge.App(RgbCapture(), copy.deepcopy(bridge.DEFAULTS))
     app.save_settings = lambda: None
     app.others = others
     app.plugin_host = plugins.Host(app, [ROOT])
@@ -132,10 +133,10 @@ def test_two_fm1s_and_the_job_line():
     screen.lib.tick()
     assert said == ["DONE: Backed up SLOOP 2.8"]
     status = app.plugin_host.web_status()["fm1-companion"]
-    assert status["version"] == "0.3.0" and status["library_fm1"] == "B" and status["job"]["state"] == "done"
+    assert status["version"] == "0.4.0" and status["library_fm1"] == "B" and status["job"]["state"] == "done"
     assert app.plugin_host.web_command("fm1-companion", "fetch", {"firmware": "nope"}) == "firmware: sloop or clipper"
     assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "D"}) == "The library works on FM-1 D"
-    assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "E"}) == "FM-1 A to D"   # E-G: a Pocket's
+    assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "H"}) == "FM-1 A to G"   # E-G: a Pocket's
     assert screen.lib.which() == "D"
 
 
@@ -213,3 +214,72 @@ def test_a_real_job_process():
             break
         time.sleep(0.2)
     assert job and job["job"] == "identify" and job["state"] == "error", job
+
+
+POCKET_CODE = Path(os.environ.get("FM1_COMPANION") or ROOT.parent / "FM-1 Bridge") / "fm1-bt-bridge"
+
+
+@pytest.mark.skipif(not (POCKET_CODE / "web.py").is_file()
+                    or "confirmed" not in (POCKET_CODE / "web.py").read_text(encoding="utf-8"),
+                    reason="no FM-1 Companion with the linked Studio's FM-1 E-G next to this repository")
+def test_library_on_a_linked_pockets_fm1s():
+    """FM-1 E and F are the linked Pocket's A and B: a backup there comes back into the Studio's library, a
+    restore sends its file first and runs confirmed (the hold was on the Studio's screen); against the Pocket's own
+    web.py (tests/pocket_server.py), its jobs pretended"""
+    import subprocess
+    folder = Path(tempfile.mkdtemp(prefix="fm1-pocket-"))
+    server = subprocess.Popen([sys.executable, str(Path(__file__).parent / "pocket_server.py"), str(POCKET_CODE),
+                               str(folder)], stdout=subprocess.PIPE, text=True)
+    try:
+        port = int(server.stdout.readline())
+        _, _, screen = studio_with_plugin([])
+        lib = screen.lib
+        lib.pocket = lambda: f"127.0.0.1:{port}"
+
+        def wait(what):
+            deadline = time.time() + 20
+            while time.time() < deadline and not what():
+                time.sleep(0.1)
+            assert what()
+        lib.ask_pocket()
+        wait(lambda: lib.pocket_fm1s == ["A", "B"])
+        assert lib.letters()[-2:] == ["E", "F"]
+        assert lib.use("G") == "The library works on FM-1 G" and lib.start(["backup"]) == \
+            "FM-1 G isn't plugged into the Pocket"
+        lib.use("E")
+        assert lib.start(["backup"]) is None
+        wait(lambda: lib.remote["state"] != "running")
+        assert lib.remote["state"] == "done", lib.remote
+        name = lib.remote["result"]["file"]
+        assert (TMP / "library" / "backups" / name).is_file()                  # copied back to the Studio
+        lib.use("F")
+        lib.started = 0.0
+        backup = TMP / "library" / "backups" / name
+        assert lib.start(["restore", backup]) is None
+        wait(lambda: lib.remote["state"] != "running")
+        assert lib.remote["state"] == "done", lib.remote
+        assert (TMP / "library" / "backups" / lib.remote["result"]["before"]).is_file()   # its safety backup too
+        jobs = [json.loads(line) for line in (folder / "jobs.jsonl").read_text().splitlines()]
+        assert jobs[0] == ["--fm1", "A", "backup"]
+        assert jobs[1][:3] == ["--fm1", "B", "restore"] and jobs[1][3].endswith(name)    # sent there first
+        lib.started = 0.0
+        assert lib.start(["load-sample", 1, "x", TMP / "nope.wav"]) is None              # a file it can't send
+        wait(lambda: lib.remote["state"] != "running")
+        assert lib.remote["state"] == "error" and "Pocket" in lib.remote["message"]
+    finally:
+        server.kill()
+
+
+@pytest.mark.skipif(not hasattr(plugins.Studio, "pocket"), reason="a Studio without a linked Pocket's FM-1s")
+def test_a_linked_pockets_fm1s_are_e_to_g():
+    """the Pocket's own streams (fm1-pocket-a/c) and network MIDI sessions are FM-1 E-G; its mix stays POCKET"""
+    app, _, _ = studio_with_plugin([])
+    node = lambda i, name, description: {"type": "PipeWire:Interface:Node", "id": i, "info": {"props": {   # noqa: E731
+        "media.class": "Audio/Source", "node.name": name, "node.description": description}}}
+    objects = [node(1, "fm1-pocket", "Pocket (link)"), node(2, "fm1-pocket-a", "Pocket FM-1 A"),
+               node(3, "fm1-pocket-c", "Pocket FM-1 C")]
+    assert [s["label"] for s in bridge.pick_nodes(objects, app.plugin_host)[1]] == ["POCKET", "FM-1 E", "FM-1 G"]
+    rules = app.plugin_host.midi_names()
+    assert [plugins.name_device(f"FM-1 Companion Pocket FM-1 {x}", rules, set()) for x in "ABC"] == \
+        ["FM-1 E", "FM-1 F", "FM-1 G"]
+    assert plugins.name_device("Felucca", rules, set()) is None       # (the Studio's own: by card, not by rules)
