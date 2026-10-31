@@ -6,7 +6,7 @@ API they use, is in XOXO Studio's `docs/PLUGINS.md` and its `fm1-bt-bridge/plugi
 
 | Plug-in | Version | What it does |
 |---|---|---|
-| [fm1-companion](fm1-companion/) | 0.4.0 | The FM-1 on the Studio: up to four FM-1s, FM-1 A to D by USB port, as sound sources in the mixer and MIDI devices in the routes, the FM-1 keeping the clock; a linked Pocket's three as FM-1 E to G, its library jobs run through the Pocket. A Clipper is an FM-1 only when no other FM-1 is plugged in. The FM-1 library on its screen (MORE › PLUG-INS › FM-1) and the web page: backups, projects, songs, sample slots, DX7 patches and firmware, the FM-1 Companion's own jobs. Card names and the web page need a Studio with the plug-in additions to API 1 |
+| [fm1-companion](fm1-companion/) | 0.4.1 | The FM-1 on the Studio: up to four FM-1s, FM-1 A to D by USB port, as sound sources in the mixer and MIDI devices in the routes, the FM-1 keeping the clock; a linked Pocket's three as FM-1 E to G, its library jobs run through the Pocket. A Clipper is an FM-1 only when no other FM-1 is plugged in. The FM-1 library on its screen (MORE › PLUG-INS › FM-1) and the web page: backups, projects, songs, sample slots, DX7 patches and firmware, the FM-1 Companion's own jobs. Card names and the web page need a Studio with the plug-in additions to API 1 |
 
 XOXO Studio's default plug-ins (XO-4, the DJ decks, the Pocket link, the computer link) aren't here: they come
 with the Studio.
@@ -45,6 +45,9 @@ same page. A plug-in that has a problem is switched off by the Studio, with a me
   Studio's library; a restore on F sends the backup first, runs confirmed, and its safety backup comes back; a
   file that can't be sent is an error. **Not yet tried with a real Pocket**, and the Studio's side of E-G (its
   receivers, sources, MIDI sessions, `pocket()`) is still to be built in XOXO Studio.
+- **fm1-companion 0.4.1** (2026-10-31): on a PC: HOME's detail for each FM-1 (`set_detail`): asked once when it
+  appears, "SLOOP 2.8" or its USB name ("FELUCCA") when its firmware doesn't answer, gone when it's unplugged.
+  **Not yet tried with a real FM-1**.
 
 ### On the Studio, with two FM-1s and the SMK-37 Pro
 

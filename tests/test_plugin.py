@@ -133,7 +133,7 @@ def test_two_fm1s_and_the_job_line():
     screen.lib.tick()
     assert said == ["DONE: Backed up SLOOP 2.8"]
     status = app.plugin_host.web_status()["fm1-companion"]
-    assert status["version"] == "0.4.0" and status["library_fm1"] == "B" and status["job"]["state"] == "done"
+    assert status["version"] == "0.4.1" and status["library_fm1"] == "B" and status["job"]["state"] == "done"
     assert app.plugin_host.web_command("fm1-companion", "fetch", {"firmware": "nope"}) == "firmware: sloop or clipper"
     assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "D"}) == "The library works on FM-1 D"
     assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "H"}) == "FM-1 A to G"   # E-G: a Pocket's
@@ -283,3 +283,34 @@ def test_a_linked_pockets_fm1s_are_e_to_g():
     assert [plugins.name_device(f"FM-1 Companion Pocket FM-1 {x}", rules, set()) for x in "ABC"] == \
         ["FM-1 E", "FM-1 F", "FM-1 G"]
     assert plugins.name_device("Felucca", rules, set()) is None       # (the Studio's own: by card, not by rules)
+
+
+@pytest.mark.skipif(not hasattr(plugins.Studio, "set_detail"), reason="a Studio without set_detail")
+def test_home_shows_what_each_fm1_runs():
+    """each FM-1 asked once what it runs when it appears (fm1lib.py label), shown on HOME, gone when it goes"""
+    app, _, screen = studio_with_plugin([])
+    lib, asked = screen.lib, []
+
+    class Done:
+        def __init__(self, stdout):
+            self.stdout = stdout
+
+    def run(command, **kw):
+        asked.append(command[-2])
+        return Done({"A": "SLOOP 2.8\n", "B": "FELUCCA\n"}[command[-2]])
+    lib.show_firmware.__globals__["subprocess"] = type("Fake", (), {"run": staticmethod(run),
+                                                                    "SubprocessError": Exception})
+    try:
+        studio = app.plugin_host.loaded["fm1-companion"]
+        for _ in range(6):                                           # a tick each: ask A, show it, ask B, show it
+            lib.show_firmware(CARDS)
+            if lib.labeller:
+                lib.labeller.join()
+        assert studio.details == {"FM-1 A": "SLOOP 2.8", "FM-1 B": "FELUCCA"} and asked == ["A", "B"]
+        lib.show_firmware(CARDS)
+        assert asked == ["A", "B"]                                   # asked once
+        lines = CARDS.splitlines()
+        lib.show_firmware("\n".join(lines[:4]) + "\n")              # FM-1 A (card 3) unplugged: card 2 is A now
+        assert "FM-1 B" not in studio.details
+    finally:
+        lib.show_firmware.__globals__["subprocess"] = __import__("subprocess")

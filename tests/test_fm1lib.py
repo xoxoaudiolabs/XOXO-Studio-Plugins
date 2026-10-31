@@ -105,3 +105,35 @@ def test_firmware_label():
     fm1lib.FIRMWARE.parent.mkdir(parents=True, exist_ok=True)
     fm1lib.FIRMWARE.write_text(json.dumps({"firmware": "FELUCCA SLOOP 2.8"}))
     assert fm1lib.firmware_label() == "SLOOP 2.8"
+
+
+def test_label():
+    """HOME's few words: what the FM-1 says it runs, else its sound card's USB name"""
+    assert fm1lib.short_label("FELUCCA SLOOP 2.8") == "SLOOP 2.8"
+    real = sloop.Sloop, sloop.fm1_cards, sloop.CARDS, sloop.Link
+
+    class Says:
+        def __init__(self, link):
+            self.version = "FELUCCA SLOOP 2.8"
+
+    class Silent:
+        def __init__(self, link):
+            raise sloop.SloopError("noreply", "no reply")
+
+    cards = TMP / "cards"
+    cards.write_text(" 2 [Felucca        ]: USB-Audio - Felucca\n 3 [Felucca_1      ]: USB-Audio - Felucca\n")
+    try:
+        sloop.fm1_cards, sloop.CARDS, sloop.Link = (lambda text=None: [3, 2]), cards, (lambda card=None: card)
+        sloop.Sloop = Says
+        assert fm1lib.label() == "SLOOP 2.8"
+        sloop.Sloop = Silent
+        fm1lib.FM1 = "B"
+        assert fm1lib.label() == "FELUCCA"                       # card 2: "Felucca" (A's would be "Felucca_1")
+        fm1lib.FM1 = "D"
+        try:
+            fm1lib.label()
+        except sloop.SloopError:
+            pass                                                 # (no FM-1 D: target_card says so)
+    finally:
+        fm1lib.FM1 = "A"
+        sloop.Sloop, sloop.fm1_cards, sloop.CARDS, sloop.Link = real

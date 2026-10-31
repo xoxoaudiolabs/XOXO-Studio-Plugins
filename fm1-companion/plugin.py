@@ -9,6 +9,9 @@ The Pocket (xoxoaudiolabs/FM-1-Companion) is the FM-1-focused box; this plug-in 
     MIDI sessions ("... Pocket FM-1 A") named so, and the library's jobs on them run through the Pocket's web API
     (files sent there first; writes held on the Studio's screen, then sent confirmed; backups copied back here).
     Needs the Pocket's side (FM-1-Companion) and a Studio with pocket() and the Pocket's sources and sessions
+  - HOME shows what each of the Studio's FM-1s runs (0.4.1, a Studio with set_detail): "SLOOP 2.8", or its USB
+    name ("FELUCCA") when its firmware doesn't answer SLOOP's editor; asked once when it appears and after a
+    firmware install (fm1lib.py label), never during a job. Not for a Pocket's E-G yet
   - the FM-1 keeps the clock when it's plugged in (the Studio's WirePlumber rule, already there: priority.driver)
   - the FM-1 screen (MORE > PLUG-INS > FM-1): the FM-1s it has found, and the FM-1 library (0.2): backups,
     projects, songs, sample slots, DX7 patches and firmware in ~/fm1-library, the Pocket's own jobs (lib/fm1lib.py)
@@ -38,7 +41,7 @@ import urllib.request
 from pathlib import Path
 
 API = 1
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 FM1_SOUND = r"felucca|sloop|fm-1|fm1|m-vave"    # in a USB sound card's names (the FM-1 Companion's source_match)
 FM1_MIDI = r"^(felucca|sloop|fm-1|fm1)\b"       # an FM-1's ALSA MIDI client name ("Felucca", "SLOOP")
@@ -154,6 +157,7 @@ class Library:
         self.fm1s = min(len(fm1_cards()), len(LETTERS))
         self.remote = None                      # the job on a linked Pocket's FM-1 (E-G), as the Pocket says it
         self.pocket_fm1s, self.pocket_asked, self.asker = [], 0.0, None   # the Pocket's FM-1s plugged in: "A"-"C"
+        self.details, self.answers, self.labeller = {}, {}, None   # HOME's "SLOOP 2.8": {"FM-1 A": (card, text)}
 
     def read(self):
         try:
@@ -170,6 +174,7 @@ class Library:
         self.fm1s = min(len(fm1_cards()), len(LETTERS))
         self.ask_pocket()
         self.list_if_changed()
+        self.show_firmware()
         job = self.read()
         if self.remote and (not job or self.remote.get("started", 0) >= job.get("started", 0)):
             job = self.remote                   # the newer of the two: the Studio's own, or the Pocket's
@@ -178,6 +183,42 @@ class Library:
         was, self.job = self.job, job
         if job and job.get("state") in ("done", "error") and (was or {}).get("state") == "running":
             self.studio.say(job_text(job)[:60], 4)
+            if job.get("job") == "flash" and job is not self.remote:
+                self.details.clear()            # (asked again: what it runs now)
+
+    def show_firmware(self, text=None):
+        """HOME's detail for each of the Studio's FM-1s (set_detail): what it runs ("SLOOP 2.8", or its USB name),
+        asked once when it appears (fm1lib.py label, in the background, never during a job), taken away when it
+        goes. text: /proc/asound/cards (read here)"""
+        if not hasattr(self.studio, "set_detail"):
+            return
+        plugged = {name: card for card, name in card_names(read_cards() if text is None else text).items()}
+        for name in [n for n, (card, _) in self.details.items() if plugged.get(n) != card]:
+            del self.details[name]
+            self.studio.set_detail(name, None)
+        answers, self.answers = self.answers, {}
+        for name, (card, said) in answers.items():
+            if plugged.get(name) == card:
+                self.details[name] = (card, said)
+                self.studio.set_detail(name, said or None)
+        if (self.labeller and self.labeller.is_alive()) or self.busy():
+            return
+        todo = [name for name in sorted(plugged) if name not in self.details]
+        if not todo:
+            return
+        name, card = todo[0], plugged[todo[0]]
+        self.details[name] = (card, None)
+
+        def run():
+            try:
+                done = subprocess.run([sys.executable, str(LIB), "--fm1", name[-1], "label"], capture_output=True,
+                                      text=True, timeout=30)
+                said = done.stdout.strip()[:16]
+            except (OSError, subprocess.SubprocessError):
+                said = ""
+            self.answers[name] = (card, said)
+        self.labeller = threading.Thread(target=run, daemon=True)
+        self.labeller.start()
 
     def list_if_changed(self):
         """the files, listed again (in the background: it reads every backup) when a folder has changed"""
