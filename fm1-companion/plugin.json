@@ -1,0 +1,10 @@
+{
+  "id": "fm1-companion",
+  "name": "FM-1 Companion",
+  "version": "0.1.0",
+  "api": 1,
+  "author": "XOXO Audio Labs",
+  "license": "GPL-3.0",
+  "entry": "plugin.py",
+  "description": "The FM-1 on XOXO Studio: FM-1 A and FM-1 B as sound sources and MIDI devices, the FM-1 keeping the clock."
+}
