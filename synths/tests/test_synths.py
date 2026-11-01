@@ -208,6 +208,13 @@ def test_the_synths_screen(studio):
     assert conf["slots"]["A"]["font"] == "Strings.sf2" and conf["slots"]["A"]["program"] == 48
     assert app.plugin_host.web_command("synths", "preset", {"font": "TimGM6mb.sf2", "program": 9}) == "SYNTH A: Bells"
     assert app.plugin_host.web_status()["synths"]["slots"]["A"]["preset"] == [0, 9, "Bells"]
+    assert conf["slots"]["A"]["level"] == 1.0                       # (louder than 0.1.0's 0.5)
+    tap(ui, "synths-level-up")
+    assert conf["slots"]["A"]["level"] == 1.3 and screen.synth.files["want"] and screen.synth.conf["level"] == 1.3
+    for _ in range(9):
+        tap(ui, "synths-level-up")
+    assert conf["slots"]["A"]["level"] == 2.0                       # (no louder than the last step)
+    assert app.plugin_host.web_command("synths", "level", {"step": -1}) == "SYNTH A level 1.6"
     tap(ui, "synths-on")
     assert conf["slots"]["A"]["on"] is False and screen.synth.text() == "OFF"
     assert app.plugin_host.errors == {}
@@ -218,7 +225,7 @@ def test_the_plugin_runs_its_slot(studio):
     app, ui, screen, _, _ = studio
     font = soundfont(TMP / "system" / "TimGM6mb.sf2", [(0, 0, "Piano"), (0, 5, "EP")])
     conf = app.state["plugins"]["synths"]["settings"].setdefault("slots", {}).setdefault("A", {})
-    conf.update(on=True, font="TimGM6mb.sf2", bank=0, program=5)
+    conf.update(on=True, font="TimGM6mb.sf2", bank=0, program=5, gain=0.5)   # (0.1.0's gain: gone, level 1.0)
     (TMP / "run" / "synths-a.json").unlink(missing_ok=True)
     LOG.write_text("")
     details = []
@@ -232,6 +239,7 @@ def test_the_plugin_runs_its_slot(studio):
         return screen.synth.text() == "PLAYING" and f"select 0 1 0 5" in LOG.read_text()
     wait(ticked, 15)
     assert LOG.read_text().splitlines()[0] == f"load {font}"
+    assert "gain 1.00" in LOG.read_text() and "gain" not in conf
     app.plugin_host.emit("tick")
     if hasattr(studio_api, "set_detail"):
         assert details[-1] == ("SYNTH A", "EP")
