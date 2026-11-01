@@ -58,7 +58,8 @@ def fonts():
     for folder in [LIBRARY, *SYSTEM_FONTS]:
         try:
             for p in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
-                if p.is_file() and p.suffix.lower() in SUFFIXES and not p.name.startswith("."):
+                if (p.is_file() and not p.is_symlink() and p.suffix.lower() in SUFFIXES   # (default-GM.sf2: a
+                        and not p.name.startswith(".")):                                # link to one of them)
                     found.setdefault(p.name, p)
         except OSError:
             continue

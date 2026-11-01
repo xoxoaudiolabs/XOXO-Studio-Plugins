@@ -49,7 +49,7 @@ def engine_command(slot, gain=0.5):
         return None
     return [found, "-a", "pipewire", "-m", "alsa_seq", "-r", "48000", "-g", f"{gain:.2f}",
             "-o", f"midi.alsa_seq.id=synths-{slot}", "-o", "synth.polyphony=64", "-o", "synth.cpu-cores=1",
-            "-o", "synth.chorus.active=0"]
+            "-o", "synth.chorus.active=0", "-o", "synth.default-soundfont="]   # (none of its own: 148 MB)
 
 
 def loopback_command(slot):
@@ -140,7 +140,7 @@ class Slot:
             with self.heard:
                 since = self.count
             self.send(f"load \"{font}\"" if " " in font else f"load {font}")
-            m = self.wait_for(r"loaded SoundFont has ID (\d+)|[Ff]ailed|[Ee]rror|not found", since, LOAD_TIME)
+            m = self.wait_for(r"loaded SoundFont has ID (\d+)|error:.*|[Ff]ailed to load.*", since, LOAD_TIME)
             if not m or not m.group(1):
                 self.message = f"couldn't load {Path(font).name}" + (f": {m.group(0)}" if m else "")
                 return
