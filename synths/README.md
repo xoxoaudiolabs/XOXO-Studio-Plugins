@@ -8,6 +8,7 @@ isn't made by its people.
 | Version | What it does |
 |---|---|
 | 0.1.0 | **SYNTH A**: [FluidSynth](https://www.fluidsynth.org) playing a SoundFont. A sound source in the Studio's mixer and a MIDI device in its routes, both called SYNTH A, so a keyboard, an FM-1 or XO-4 plays it. Its screen (MORE › PLUG-INS › SYNTHS): on or off, the SoundFont, the preset. HOME shows the preset's name beside SYNTH A |
+| 0.1.1 | Louder: SYNTH A's level 1.0 (0.1.0's was 0.5, quiet beside the other channels), and LEVEL − / + on its screen (0.4 to 2.0) |
 
 Its sound in the mixer needs a Studio with `add_sound_source` (a plug-in addition to API 1); on an older Studio
 SYNTH A is only a MIDI device.
@@ -42,7 +43,12 @@ Your own SoundFonts (.sf2, .sf3) go in `~/fm1-library/soundfonts/`; the system's
   process loads the SoundFont, picks the preset, lets an old SoundFont go, says when the engine stops or a
   SoundFont won't load, and stops when the plug-in does; in XOXO Studio's own code: SYNTH A in the mixer and the
   MIDI routes, its screen (on/off, SoundFonts, presets), the web commands, the plug-in starting and stopping its
-  slot. **Not yet tried on a Studio with the real FluidSynth.**
+  slot.
+- **0.1.0 on the Studio** (2026-11-01, a Raspberry Pi 3 B+, XOXO Studio f62b576): FluidSynth 2.4.4 from Raspberry
+  Pi OS plays into `synths-a-in`; SYNTH A in the mixer and a destination in the MIDI matrix; the Felucca's keys
+  routed to SYNTH A play TimGM6mb's Piano 1, heard. FluidSynth: 33 MB, about 8-10% of the processor. Not yet
+  tried: another SoundFont or preset on the Studio, a crash and its restart, XO-4 playing it.
+- **0.1.1 on the Studio** (2026-11-01): level 1.0 sounds right beside the other channels.
 
 ### On the Studio (a Pi 3 B+ or 4, the SMK-37 Pro)
 
@@ -52,8 +58,11 @@ Your own SoundFonts (.sf2, .sf3) go in `~/fm1-library/soundfonts/`; the system's
 4. `pkill fluidsynth`: the Studio carries on, the screen says so, SYNTH A starts again after 30 s.
 5. Switch the plug-in off: SYNTH A goes from the mixer within 10 s.
 
-To check on the Studio: that Raspberry Pi OS's FluidSynth has its PipeWire driver and follows `PIPEWIRE_NODE` to
-`synths-a-in` (if not, its sound goes to the speaker directly, outside the mixer).
+`apt install fluidsynth` also brings qsynth, Qt, GTK and FluidR3 (148 MB) as its recommendations; with
+`--no-install-recommends` it doesn't (then install `timgm6mb-soundfont` by name, as above).
+
+The MIDI matrix needs XOXO Studio f62b576 or later (devices that only receive MIDI as destinations); before it,
+SYNTH A is only in the mixer.
 
 ## What's next
 

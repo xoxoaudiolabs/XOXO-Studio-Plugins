@@ -7,7 +7,7 @@ API they use, is in XOXO Studio's `docs/PLUGINS.md` and its `fm1-bt-bridge/plugi
 | Plug-in | Version | What it does |
 |---|---|---|
 | [fm1-companion](fm1-companion/) | 0.4.1 | The FM-1 on the Studio: up to four FM-1s, FM-1 A to D by USB port, as sound sources in the mixer and MIDI devices in the routes, the FM-1 keeping the clock; a linked Pocket's three as FM-1 E to G, its library jobs run through the Pocket. A Clipper is an FM-1 only when no other FM-1 is plugged in. The FM-1 library on its screen (MORE › PLUG-INS › FM-1) and the web page: backups, projects, songs, sample slots, DX7 patches and firmware, the FM-1 Companion's own jobs. Card names and the web page need a Studio with the plug-in additions to API 1 |
-| [synths](synths/) | 0.1.0 | Software synths, the ones Zynthian plays: SYNTH A, FluidSynth playing a SoundFont, a sound source in the mixer and a MIDI device in the routes, its SoundFont and preset on its screen (MORE � PLUG-INS � SYNTHS). Kept to its own folder (its README, licence and tests) so it can become a repository of its own. Its sound in the mixer needs a Studio with `add_sound_source` |
+| [synths](synths/) | 0.1.1 | Software synths, the ones Zynthian plays: SYNTH A, FluidSynth playing a SoundFont, a sound source in the mixer and a MIDI device in the routes, its SoundFont and preset on its screen (MORE › PLUG-INS › SYNTHS). Kept to its own folder (its README, licence and tests) so it can become a repository of its own. Its sound in the mixer needs a Studio with `add_sound_source` |
 
 XOXO Studio's default plug-ins (XO-4, the DJ decks, the Pocket link, the computer link) aren't here: they come
 with the Studio.

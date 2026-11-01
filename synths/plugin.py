@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 API = 1
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 HERE = Path(__file__).resolve().parent
 SLOT = HERE / "lib" / "slot.py"
@@ -37,7 +37,8 @@ RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
 SUFFIXES = (".sf2", ".sf3")
 SLOTS = "A"                                     # (B: later, with a CPU check first)
 DEFAULT_FONTS = ("TimGM6mb.sf2", "FluidR3_GM.sf2", "FluidR3_GM.sf3", "MuseScore_General.sf3")
-GAIN = 0.5
+LEVELS = (0.4, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0)      # FluidSynth's gain, picked on the screen (0.1.0: 0.5, quiet)
+LEVEL = 1.0
 RETRY = 30.0                                    # s before a slot that stopped with an error is started again
 ROWS = 4                                        # presets on the screen at once
 
@@ -102,7 +103,7 @@ def read_json(path):
 
 
 class Synth:
-    """one slot: its settings (on, font, bank, program, gain under settings["slots"][letter]), its process
+    """one slot: its settings (on, font, bank, program, level under settings["slots"][letter]), its process
     (lib/slot.py) started, kept alive and told the sound wanted; what it says read back on each tick"""
 
     def __init__(self, studio, letter):
@@ -116,7 +117,9 @@ class Synth:
         slots = self.studio.settings.setdefault("slots", {})
         conf = slots.setdefault(self.letter, {})
         conf.setdefault("on", True)
-        conf.setdefault("gain", GAIN)
+        if conf.get("level") not in LEVELS:
+            conf["level"] = LEVEL
+        conf.pop("gain", None)                  # (0.1.0's, always 0.5)
         if not conf.get("font"):
             names = [p.name for p in fonts()]
             conf["font"] = next((n for n in DEFAULT_FONTS if n in names), names[0] if names else None)
@@ -168,7 +171,7 @@ class Synth:
         """the sound wanted, for the slot process (a new id only when it changes)"""
         preset, font = self.preset(), self.font()
         want = {"font": str(font) if font else None, "bank": preset[0] if preset else 0,
-                "program": preset[1] if preset else 0, "gain": float(self.conf.get("gain", GAIN))}
+                "program": preset[1] if preset else 0, "gain": float(self.conf["level"])}
         had = read_json(self.files["want"]) or {}
         if {k: had.get(k) for k in want} != want:
             tmp = self.files["want"].with_name(self.files["want"].name + ".tmp")
@@ -229,6 +232,12 @@ class Synth:
         self.conf["bank"], self.conf["program"] = first[0][:2] if first else (0, 0)
         self.studio.save()
 
+    def set_level(self, step):
+        """a step louder (1) or quieter (-1)"""
+        at = LEVELS.index(self.conf["level"])
+        self.conf["level"] = LEVELS[max(0, min(at + step, len(LEVELS) - 1))]
+        self.studio.save()
+
     def set_preset(self, bank, program):
         self.conf["bank"], self.conf["program"] = int(bank), int(program)
         self.studio.save()
@@ -251,6 +260,7 @@ class Synth:
     def web_status(self):
         preset = self.preset()
         return {"on": bool(self.conf.get("on")), "text": self.text(), "font": self.conf.get("font"),
+                "level": self.conf["level"],
                 "preset": list(preset) if preset else None}
 
 
@@ -264,7 +274,7 @@ class SynthsScreen:
     def view(self, now):
         conf = self.synth.conf
         return (self.synth.letter, self.top, conf.get("on"), conf.get("font"), conf.get("bank"), conf.get("program"),
-                self.synth.text())
+                conf.get("level"), self.synth.text())
 
     def scroll(self, step):
         self.top = max(0, min((self.top or 0) + step, len(self.list()) - ROWS))
@@ -282,7 +292,10 @@ class SynthsScreen:
         ui.centre(img, (4, 40, 104, 70), synth.name, t.hi)
         ui.button(img, d, (108, 40, 188, 70), "ON" if conf.get("on") else "OFF",
                   lambda: synth.set_on(not conf.get("on")), on=bool(conf.get("on")), key="synths-on")
-        ui.centre(img, (192, 40, 476, 70), synth.text()[:30], t.c[3])
+        ui.centre(img, (192, 40, 330, 70), synth.text()[:16], t.c[3])
+        ui.button(img, d, (334, 40, 370, 70), "-", lambda: synth.set_level(-1), key="synths-level-down")
+        ui.centre(img, (372, 40, 436, 70), f"LVL {conf['level']:.1f}", t.hi)
+        ui.button(img, d, (440, 40, 476, 70), "+", lambda: synth.set_level(1), key="synths-level-up")
         ui.button(img, d, (4, 76, 56, 104), "<", lambda: self.font(-1), key="synths-font-prev")
         ui.centre(img, (60, 76, 420, 104), (conf.get("font") or "NO SOUNDFONT")[:40], t.hi)
         ui.button(img, d, (424, 76, 476, 104), ">", lambda: self.font(1), key="synths-font-next")
@@ -302,7 +315,9 @@ class SynthsScreen:
         if len(found) > ROWS:
             ui.button(img, d, (424, 110, 476, 164), "UP", lambda: self.scroll(-ROWS), key="synths-up")
             ui.button(img, d, (424, 170, 476, 224), "DOWN", lambda: self.scroll(ROWS), key="synths-down")
-        ui.centre(img, (4, 236, 476, 262), f"PLAY IT FROM THE MIDI ROUTES: {synth.name}", t.c[2])
+        said = synth.text()
+        ui.centre(img, (4, 236, 476, 262), said[:58] if len(said) > 16 else f"PLAY IT FROM THE MIDI ROUTES: {synth.name}",
+                  t.c[3] if len(said) > 16 else t.c[2])
 
 
 def setup(studio):
@@ -335,5 +350,12 @@ def setup(studio):
         synth.set_preset(int(args.get("bank") or 0), int(args.get("program") or 0))
         return f"{synth.name}: {(synth.preset() or (0, 0, 'no preset'))[2]}"
 
-    studio.add_web(status=status, commands={"on": command_on, "preset": command_preset})
+    def command_level(args):
+        synth = next((s for s in synths if s.letter == str(args.get("slot", "A")).upper()), None)
+        if synth is None:
+            return f"slot: {SLOTS}"
+        synth.set_level(1 if args.get("step", 1) > 0 else -1)
+        return f"{synth.name} level {synth.conf['level']:.1f}"
+
+    studio.add_web(status=status, commands={"on": command_on, "preset": command_preset, "level": command_level})
     studio.on("tick", lambda: [s.tick() for s in synths])
