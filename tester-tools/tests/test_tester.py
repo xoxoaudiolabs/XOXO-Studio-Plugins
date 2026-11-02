@@ -74,6 +74,15 @@ def test_a_note_left_sounding_first():
     assert test.state == "done" and test.result()["median"] == 10.0
 
 
+def test_another_note():
+    """a note of the test's choosing (36: a Studio's first pad, played over the link by a Studio following)"""
+    synth = PretendSynth(delay=480)
+    test = tester.LatencyTest("NET", "xoxo-studio-in", synth.send, synth.samples(), note=36)
+    test.run()
+    assert test.state == "done" and [0x90, 36, tester.VELOCITY] in synth.sent
+    assert [0x90, tester.NOTE, tester.VELOCITY] not in synth.sent
+
+
 def test_nothing_comes_back():
     synth = PretendSynth(delay=100, deaf=True)
     test = tester.LatencyTest("FM-1 A", "fm1-a", synth.send, synth.samples())
