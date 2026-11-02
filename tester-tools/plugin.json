@@ -1,0 +1,10 @@
+{
+  "id": "tester-tools",
+  "name": "Tester Tools",
+  "version": "0.1.0",
+  "api": 1,
+  "author": "XOXO Audio Labs",
+  "license": "GPL-3.0",
+  "entry": "plugin.py",
+  "description": "Small tools for testing XOXO Studio and its gear. LATENCY: a note sent to a MIDI device, its sound timed coming back into the Studio (a Pocket FM-1 over the link, or anything on USB)."
+}
