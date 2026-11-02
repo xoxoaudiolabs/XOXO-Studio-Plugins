@@ -19,7 +19,7 @@ import time
 from array import array
 
 API = 1
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 RATE = 48000
 TRIES = 5                                      # notes a test plays
@@ -67,8 +67,8 @@ class LatencyTest:
     """one test: TRIES notes to device, timed in node's sound. samples: chunks of the sound (a generator), or None
     for pw-record's; send(messages): to the device"""
 
-    def __init__(self, device, node, send, samples=None):
-        self.device, self.node, self.send = device, node, send
+    def __init__(self, device, node, send, samples=None, note=NOTE):
+        self.device, self.node, self.send, self.note = device, node, send, note
         self.samples, self.proc = samples, None
         self.samples_own = samples is None      # (pw-record's: started afresh for a second attempt)
         self.times, self.state, self.error = [], "running", None
@@ -137,13 +137,13 @@ class LatencyTest:
             if self.state == "stopped":
                 return
             sent = self.at
-            self.send([[0x90, NOTE, VELOCITY]])
+            self.send([[0x90, self.note, VELOCITY]])
             heard = None
             while heard is None and self.at - sent < LISTEN * RATE:
                 start = self.at
                 chunk = self.read()
                 heard = next((start + i for i, v in enumerate(chunk) if abs(v) > threshold), None)
-            self.send([[0x80, NOTE, 0]])
+            self.send([[0x80, self.note, 0]])
             if heard is None:
                 self.error = f"no sound over {threshold} in {LISTEN:g} s"
                 continue
@@ -170,6 +170,7 @@ class Tester:
     def __init__(self, studio):
         self.studio, self.test = studio, None
         self.device = self.source = None
+        self.note = NOTE                       # (the web command's "note": 36 plays a Studio's first pad)
 
     def devices(self):
         return self.studio.midi_devices() if hasattr(self.studio, "midi_devices") else []
@@ -183,7 +184,8 @@ class Tester:
         devices, sources = self.devices(), self.sources()
         device = self.device if self.device in devices else next(
             (d for d in devices if "POCKET" in d.upper() and d in sources), devices[0] if devices else None)
-        own = "POCKET" if device == "NET" else device          # (NET: a linked Pocket's whole session, its POCKET)
+        own = "POCKET" if device == "NET" and "POCKET" in sources else "STUDIO" if device == "NET" else device
+        # (NET: a linked Pocket's whole session, its POCKET; or a Studio following this one, its STUDIO)
         source = self.source if self.source in sources else (own if own in sources else next(iter(sources), None))
         return device, source
 
@@ -211,7 +213,7 @@ class Tester:
         if not device or not source:
             return "no MIDI device or no sound source"
         node = self.sources()[source]
-        self.test = LatencyTest(device, node, lambda m: self.studio.send_midi(device, m), samples)
+        self.test = LatencyTest(device, node, lambda m: self.studio.send_midi(device, m), samples, self.note)
         self.test.source = source
         threading.Thread(target=self.finish, args=(self.test,), daemon=True).start()
         return None
@@ -295,6 +297,8 @@ def setup(studio):
             tester.device = str(args["device"])
         if args.get("source"):
             tester.source = str(args["source"])
+        note = args.get("note")
+        tester.note = note if isinstance(note, int) and 0 <= note <= 127 else NOTE
         return tester.start() or "started"
 
     studio.add_web(status=status, commands={"latency": command_latency})
