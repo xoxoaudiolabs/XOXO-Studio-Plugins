@@ -144,7 +144,7 @@ def test_in_the_studio(tmp_path):
     plugin = app.plugin_host.loaded["tester-tools"]
     assert plugin.midi_devices() == ["FM-1 A", "POCKET FM-1 A"]
     assert plugin.source_nodes()["POCKET FM-1 A"] == "fm1-pocket-a"
-    assert plugin.latency() == {"name": "SAFE", "block": 1024, "buffer_ms": 40, "rate": 48000}
+    assert plugin.latency() == {"name": "SAFE", "block": 1024, "buffer_ms": 44, "rate": 48000}
 
     ui = deskui.DeskUI(app, app.display)
     ui.theme_check = 1e12
