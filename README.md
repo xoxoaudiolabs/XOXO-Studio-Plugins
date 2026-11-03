@@ -101,7 +101,8 @@ This repository is GPL-3.0 (see [LICENSE](LICENSE)), like XOXO Studio.
   (`fm1-companion/lib/vendor/sloop/VENDORED.md`). SLOOP and Clipper firmware (isod89) aren't included; the plug-in
   downloads them from their GitHub releases when asked.
 - **Synths** runs [FluidSynth](https://www.fluidsynth.org) (LGPL-2.1) and SoundFonts installed from Raspberry Pi
-  OS, each under its own licence; none of them is copied here. It plays the kind of synths
+  OS, each under its own licence; none of them is copied here (the TimGM6mb SoundFont it suggests: Tim Brechbill,
+  GPL-2; see [synths/README.md](synths/README.md#credits)). It plays the kind of synths
   [Zynthian](https://zynthian.org) does, but isn't Zynthian and isn't made by its people. It has its own copy of
   the GPL-3.0 ([synths/LICENSE](synths/LICENSE)).
 - **Tester Tools** uses PipeWire's `pw-record`, from the Studio's own install.
