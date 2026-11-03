@@ -82,3 +82,12 @@ python -m pytest tests
 
 GPL-3.0 (see [LICENSE](LICENSE)). FluidSynth (LGPL-2.1) and the SoundFonts are installed from Raspberry Pi OS,
 each under its own licence; none of them is copied here.
+
+## Credits
+
+- **[FluidSynth](https://www.fluidsynth.org)**, the synth engine: by the FluidSynth project, LGPL-2.1+ (Raspberry
+  Pi OS's `fluidsynth` package).
+- **TimGM6mb**, the General MIDI SoundFont the install above suggests: by
+  [Tim Brechbill](https://www.timbrechbill.com) (2004), changes by David Bolton (2010), GPL-2 (Raspberry Pi OS's
+  `timgm6mb-soundfont` package). Played in something you share, a credit to Tim Brechbill is the decent thing.
+- **FluidR3_GM** (`fluid-soundfont-gm`), if you install it: by Frank Wen (2000-2002, 2008), MIT.
