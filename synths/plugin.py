@@ -12,7 +12,7 @@ sound card), so it can't be a plug-in; its synths can.
     takes too much doesn't stop the Studio, and it stops itself when the plug-in is switched off or the Studio
     stops (the plug-in touches its .alive file on each tick)
 
-Later (synths-plugin-plan.md): setBfree and ZynAddSubFX, SYNTH B, the web page's rows.
+Later: setBfree and ZynAddSubFX, SYNTH B, the web page's rows.
 """
 import importlib.util
 import json

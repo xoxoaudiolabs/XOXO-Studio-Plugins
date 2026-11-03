@@ -216,7 +216,9 @@ def test_a_real_job_process():
     assert job and job["job"] == "identify" and job["state"] == "error", job
 
 
-POCKET_CODE = Path(os.environ.get("FM1_COMPANION") or ROOT.parent / "FM-1 Bridge") / "fm1-bt-bridge"
+POCKET_CODE = Path(os.environ.get("FM1_COMPANION") or next(
+    (p for p in (ROOT.parent / "FM-1-Companion", ROOT.parent / "FM-1 Bridge") if p.is_dir()),
+    ROOT.parent / "FM-1-Companion")) / "fm1-bt-bridge"         # a clone of xoxoaudiolabs/FM-1-Companion
 
 
 @pytest.mark.skipif(not (POCKET_CODE / "web.py").is_file()
