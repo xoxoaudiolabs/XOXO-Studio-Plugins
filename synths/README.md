@@ -7,11 +7,11 @@ isn't made by its people.
 
 | Version | What it does |
 |---|---|
-| 0.1.0 | **SYNTH A**: [FluidSynth](https://www.fluidsynth.org) playing a SoundFont. A sound source in the Studio's mixer and a MIDI device in its routes, both called SYNTH A, so a keyboard, an FM-1 or XO-4 plays it. Its screen (MORE › PLUG-INS › SYNTHS): on or off, the SoundFont, the preset. HOME shows the preset's name beside SYNTH A |
+| 0.1.0 | **SYNTH A**: [FluidSynth](https://www.fluidsynth.org) playing a SoundFont. A sound source in the Studio's mixer and a MIDI device in its routes, both called SYNTH A, so a MIDI keyboard routed to it plays it. Its screen (MORE › PLUG-INS › SYNTHS): on or off, the SoundFont, the preset. HOME shows the preset's name beside SYNTH A |
 | 0.1.1 | Louder: SYNTH A's level 1.0 (0.1.0's was 0.5, quiet beside the other channels), and LEVEL − / + on its screen (0.4 to 2.0) |
 
-Its sound in the mixer needs a Studio with `add_sound_source` (a plug-in addition to API 1); on an older Studio
-SYNTH A is only a MIDI device.
+Its sound in the mixer needs a Studio with `add_sound_source` (a plug-in addition to API 1, in the XOXO Studio 0.1
+beta); on an older Studio SYNTH A is only a MIDI device.
 
 ## Installing
 
@@ -21,7 +21,8 @@ On the Studio, the synth and a General MIDI SoundFont (6 MB, fine on a 1 GB Pi):
 sudo apt install fluidsynth timgm6mb-soundfont
 ```
 
-On a Pi 4, `fluid-soundfont-gm` (FluidR3, about 140 MB in memory) sounds better. Then the plug-in's folder into
+`fluid-soundfont-gm` (FluidR3, a bigger General MIDI SoundFont, about 140 MB in memory) is meant for a Pi 4; not
+yet tried on the Studio. Then the plug-in's folder into
 `~/xoxo-plugins/` and **MORE › PLUG-INS**, as for any plug-in (XOXO-Studio-Plugins' README).
 
 Your own SoundFonts (.sf2, .sf3) go in `~/fm1-library/soundfonts/`; the system's are found in
@@ -50,7 +51,7 @@ Your own SoundFonts (.sf2, .sf3) go in `~/fm1-library/soundfonts/`; the system's
   tried: another SoundFont or preset on the Studio, a crash and its restart, XO-4 playing it.
 - **0.1.1 on the Studio** (2026-11-01): level 1.0 sounds right beside the other channels.
 
-### On the Studio (a Pi 3 B+ or 4, the SMK-37 Pro)
+### Still to try on a Studio
 
 1. Install the packages, switch Synths on: SYNTH A in MIXER and in the MIDI routes, HOME shows its preset.
 2. Route the SMK-37 to SYNTH A: notes, how quickly they sound, no crackles; change the SoundFont and the preset.
@@ -61,7 +62,7 @@ Your own SoundFonts (.sf2, .sf3) go in `~/fm1-library/soundfonts/`; the system's
 `apt install fluidsynth` also brings qsynth, Qt, GTK and FluidR3 (148 MB) as its recommendations; with
 `--no-install-recommends` it doesn't (then install `timgm6mb-soundfont` by name, as above).
 
-The MIDI matrix needs XOXO Studio f62b576 or later (devices that only receive MIDI as destinations); before it,
+SYNTH A as a destination in the MIDI routes needs XOXO Studio f62b576 or later (the 0.1 beta has it); before it,
 SYNTH A is only in the mixer.
 
 ## What's next

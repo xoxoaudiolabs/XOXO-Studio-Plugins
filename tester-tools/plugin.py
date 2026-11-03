@@ -4,7 +4,7 @@ docs/PLUGINS.md). Its screen: MORE > PLUG-INS > TESTER.
   - LATENCY (0.1): a note sent to a MIDI device and its sound timed coming back into the Studio, a few times over:
     the round trip from a note leaving the Studio to its sound arriving. For the Pocket link as a snake: POCKET
     FM-1 A (its MIDI over the link) and its sound (over the link, back), at each of the Studio's latency steps.
-    It works for any synth on USB too (an FM-1, SYNTH A). The sound is read from pw-record as it arrives, the note
+    It works for a synth on USB too (an FM-1). The sound is read from pw-record as it arrives, the note
     sent when a known number of samples has come in, and the sound's first sample over the noise found after
     that: what comes out is the whole round trip (MIDI out, the synth, its sound back through the Studio's
     capture), give or take a block of the Studio's (SAFE: 21 ms, LOWER: 5 ms). One-way is less than that
