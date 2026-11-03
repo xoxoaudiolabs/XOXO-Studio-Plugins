@@ -133,7 +133,7 @@ def test_two_fm1s_and_the_job_line():
     screen.lib.tick()
     assert said == ["DONE: Backed up SLOOP 2.8"]
     status = app.plugin_host.web_status()["fm1-companion"]
-    assert status["version"] == "0.4.1" and status["library_fm1"] == "B" and status["job"]["state"] == "done"
+    assert status["version"] == "0.5.0" and status["library_fm1"] == "B" and status["job"]["state"] == "done"
     assert app.plugin_host.web_command("fm1-companion", "fetch", {"firmware": "nope"}) == "firmware: sloop or clipper"
     assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "D"}) == "The library works on FM-1 D"
     assert app.plugin_host.web_command("fm1-companion", "use", {"fm1": "H"}) == "FM-1 A to G"   # E-G: a Pocket's
@@ -316,3 +316,35 @@ def test_home_shows_what_each_fm1_runs():
         assert "FM-1 B" not in studio.details
     finally:
         lib.show_firmware.__globals__["subprocess"] = __import__("subprocess")
+
+
+def test_save_the_sound_and_keep(monkeypatch):
+    """0.5: DX7 > SAVE THE FM-1'S SOUND starts dx7-read (on the web too, and through a linked Pocket); KEEP cycles
+    how many of its own backups the library keeps, the web sets any of 1-100, and every job is told (--keep)"""
+    app, ui, screen = studio_with_plugin([])
+    lib, started = screen.lib, []
+    real_start = lib.start
+    lib.start = lambda args: started.append([str(a) for a in args])
+    tap(ui, "fm1-DX7")
+    tap(ui, "fm1-tap-0")
+    assert started == [["dx7-read"]]
+    assert app.plugin_host.web_command("fm1-companion", "dx7-read", {}) == "started" and started[-1] == ["dx7-read"]
+    tap(ui, "fm1-back")
+    assert lib.keep() == 20
+    tap(ui, "fm1-keep")
+    settings = app.state["plugins"]["fm1-companion"]["settings"]
+    assert settings["keep_backups"] == 50 and lib.keep() == 50
+    command = lambda keep: app.plugin_host.web_command("fm1-companion", "keep", {"keep": keep})   # noqa: E731
+    assert command(0) == command(101) == command(True) == command("7") == "keep 1 to 100 backups"
+    assert command(7) == "The library keeps 7 of its own backups" and lib.keep() == 7
+    assert app.plugin_host.web_status()["fm1-companion"]["keep_backups"] == 7
+    tap(ui, "fm1-keep")
+    assert lib.keep() == 10                                          # the next above 7
+    plugin = real_start.__globals__                                  # (the plug-in's module: the host's to name)
+    assert plugin["remote_plan"](["dx7-read"]) == ([], "run", {"cmd": "dx7-read"})
+    ran = []
+    monkeypatch.setattr(plugin["shutil"], "which", lambda name: None)
+    monkeypatch.setattr(plugin["subprocess"], "Popen", lambda command, **kw: ran.append(command))
+    lib.start, lib.started, lib.job = real_start, 0.0, None
+    assert lib.start(["dx7-read"]) is None
+    assert ran[0][2:] == ["--fm1", "A", "--level", "-6 dB", "--keep", "10", "dx7-read"]

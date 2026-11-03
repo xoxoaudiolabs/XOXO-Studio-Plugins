@@ -9,13 +9,19 @@ The Pocket (xoxoaudiolabs/FM-1-Companion) is the FM-1-focused box; this plug-in 
     MIDI sessions ("... Pocket FM-1 A") named so, and the library's jobs on them run through the Pocket's web API
     (files sent there first; writes held on the Studio's screen, then sent confirmed; backups copied back here).
     Needs the Pocket's side (FM-1-Companion) and a Studio with pocket() and the Pocket's sources and sessions
-  - HOME shows what each of the Studio's FM-1s runs (0.4.1, a Studio with set_detail): "SLOOP 2.8", or its USB
-    name ("FELUCCA") when its firmware doesn't answer SLOOP's editor; asked once when it appears and after a
-    firmware install (fm1lib.py label), never during a job. Not for a Pocket's E-G yet
+  - HOME shows what each of the Studio's FM-1s runs (0.4.1, a Studio with set_detail): "SLOOP 2.8", M-VAVE's
+    handshake's ("FM-1+VA 102", "Stock 15", 0.5), or its USB name ("FELUCCA") when its firmware answers neither;
+    asked once when it appears and after a firmware install (fm1lib.py label), never during a job. Not for a
+    Pocket's E-G yet
   - the FM-1 keeps the clock when it's plugged in (the Studio's WirePlumber rule, already there: priority.driver)
   - the FM-1 screen (MORE > PLUG-INS > FM-1): the FM-1s it has found, and the FM-1 library (0.2): backups,
     projects, songs, sample slots, DX7 patches and firmware in ~/fm1-library, the Pocket's own jobs (lib/fm1lib.py)
     run as their own processes. A backup is a tap; anything that writes to the FM-1 is a 2 s hold
+  - more FM-1 firmwares in the library (0.5, the FM-1 Companion's at e43a551): backups and restores of Felucca,
+    JIANT, Melodee, Jangada and sloopDX (its 8 DX7 banks; a DX7 bank into its bank in use), Baud Girl's FM-1+VA's
+    128 presets, the sound a stock FM-1 plays now saved as a DX7 voice (DX7 > SAVE THE FM-1'S SOUND), and KEEP:
+    how many of its own backups (auto, and the safety ones before a write) the library keeps. Only SLOOP has been
+    tried on an FM-1; the others against the FM-1 Companion's stand-ins
   - the web page's Library (0.3, with a Studio that has the plug-in additions): the job, the files, and its writes
     confirmed on the Studio's screen, as the Pocket's are on the Pocket
 
@@ -41,7 +47,7 @@ import urllib.request
 from pathlib import Path
 
 API = 1
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 
 FM1_SOUND = r"felucca|sloop|fm-1|fm1|m-vave"    # in a USB sound card's names (the FM-1 Companion's source_match)
 FM1_MIDI = r"^(felucca|sloop|fm-1|fm1)\b"       # an FM-1's ALSA MIDI client name ("Felucca", "SLOOP")
@@ -123,6 +129,7 @@ SUFFIXES = {"backups": ".json", "projects": ".json", "songs": ".json", "patches"
 LEVELS = ("-6 dB", "-3 dB", "full")             # a sample's loudest point in its slot (fm1lib.SAMPLE_LEVELS)
 FIRMWARES = ("sloop", "clipper")
 FOLDERS = ("backups", "projects", "songs", "patches", "firmware")   # the library's own (plugin.json "library")
+KEEPS = (5, 10, 20, 50, 100)                    # the screen's KEEP choices (fm1lib.py --keep: 1-100, 20 unless set)
 
 
 def files(name):
@@ -288,13 +295,26 @@ class Library:
         level = self.studio.settings.get("sample_level")
         return level if level in LEVELS else LEVELS[0]
 
+    def keep(self):
+        """how many of its own backups the library keeps (keep_backups, 1-100)"""
+        keep = self.studio.settings.get("keep_backups")
+        return keep if isinstance(keep, int) and not isinstance(keep, bool) and 1 <= keep <= 100 else 20
+
+    def set_keep(self, keep):
+        if isinstance(keep, bool) or not isinstance(keep, int) or not 1 <= keep <= 100:
+            return "keep 1 to 100 backups"
+        self.studio.settings["keep_backups"] = keep
+        self.studio.save()
+        return f"The library keeps {keep} of its own backups"
+
     def start(self, args):
         """fm1lib.py args in the background -> an error message, or None"""
         if self.busy():
             return "a library job is running"
         if self.which() in POCKET and args[0] != "fetch":      # (firmware is always fetched by the Studio)
             return self.start_remote(args)
-        command = [sys.executable, str(LIB), "--fm1", self.which(), "--level", self.level(), *map(str, args)]
+        command = [sys.executable, str(LIB), "--fm1", self.which(), "--level", self.level(), "--keep",
+                   str(self.keep()), *map(str, args)]
         if shutil.which("systemd-run"):
             command = ["systemd-run", "--user", "--collect", "--quiet", f"--unit=fm1-companion-{time.time_ns()}",
                        *command]
@@ -350,10 +370,12 @@ class Library:
             if state.get("state") != "done":
                 raise PocketError(state.get("message") or "the job failed on the Pocket")
             result = state.get("result") or {}
-            made = (("songs" if job["job"] == "song-backup" else "backups", result.get("file")),
-                    ("backups", result.get("before")))         # a backup, a song, a write's safety backup
+            kept = {"song-backup": "songs", "dx7-read": "patches"}.get(job["job"], "backups")
+            made = ((kept, result.get("file")),
+                    ("backups", result.get("before")))         # a backup, a song, a sound, a write's safety backup
             for folder, name in made:           # copied back: the Studio's library stays the one place
-                if job["job"] in ("backup", "song-backup") or folder == "backups" and name == result.get("before"):
+                if job["job"] in ("backup", "song-backup", "dx7-read") or folder == "backups" and \
+                        name == result.get("before"):
                     if isinstance(name, str) and name and Path(name).name == name:
                         data = pocket_call(address, f"/files/{folder}/{urllib.parse.quote(name)}", raw=True)
                         (LIBRARY / folder).mkdir(parents=True, exist_ok=True)
@@ -365,6 +387,7 @@ class Library:
 
     def web_status(self):
         return {"version": VERSION, "library_fm1": self.which(), "fm1s": self.letters(), "job": self.job,
+                "keep_backups": self.keep(),
                 "waiting": bool(self.waiting) and time.monotonic() - self.waiting < 120,
                 "library": self.listing, "library_at": self.listing_at}
 
@@ -378,6 +401,8 @@ class Library:
             return self.start(["fetch", name]) or "started"
         return {"backup": lambda args: self.start(["backup"]) or "started",
                 "song-backup": lambda args: self.start(["song-backup"]) or "started",
+                "dx7-read": lambda args: self.start(["dx7-read"]) or "started",
+                "keep": lambda args: self.set_keep(args.get("keep")),
                 "fetch": fetch, "use": lambda args: self.use(str(args.get("fm1", ""))), "ask": self.ask}
 
     def ask(self, r):
@@ -472,7 +497,7 @@ def remote_plan(args):
     """fm1lib.py's job args -> (the files the Pocket needs [(folder, path)], "run" or "ask", the request): the
     Pocket's web API names (its web.py run and ask)"""
     command, rest = str(args[0]), [Path(a) if isinstance(a, Path) else a for a in args[1:]]
-    if command in ("backup", "song-backup"):
+    if command in ("backup", "song-backup", "dx7-read"):
         return [], "run", {"cmd": command}
     if command == "restore":
         return [("backups", rest[0])], "ask", {"cmd": "restore", "file": rest[0].name}
@@ -530,6 +555,7 @@ PAGES = {
                "choices": (("slot", "SLOT", ("1", "2", "3", "4")), ("level", "LEVEL", LEVELS)),
                "args": lambda p, c: ["load-sample", c["slot"], p.stem[:8], p]},
     "dx7": {"title": "DX7 PATCHES", "folders": ("patches",), "hold": "HOLD: SEND TO FM-1",
+            "taps": (("SAVE THE FM-1'S SOUND", ["dx7-read"]),),             # (stock firmware only: fm1lib.py)
             "args": lambda p, c: ["dx7-send", p]},
     "firmware": {"title": "FIRMWARE", "folders": ("firmware",), "hold": "HOLD: INSTALL",
                  "taps": (("GET SLOOP", ["fetch", "sloop"]), ("GET CLIPPER (EXP.)", ["fetch", "clipper"])),
@@ -554,7 +580,8 @@ class FM1Screen:
     def view(self, now):
         job = self.lib.job or {}
         return (self.page, self.top, str(self.picked), tuple(sorted(self.choice.items())), tuple(self.found()),
-                self.lib.which(), self.lib.level(), self.ui.lit("fm1-hold"), job.get("state"), job.get("step"),
+                self.lib.which(), self.lib.level(), self.lib.keep(), self.ui.lit("fm1-hold"), job.get("state"),
+                job.get("step"),
                 int(job.get("percent") or 0), job.get("message"))
 
     # ---- what a tap does
@@ -587,6 +614,11 @@ class FM1Screen:
             self.studio.settings["sample_level"] = value
             self.studio.save()
 
+    def next_keep(self):
+        """KEEP: the next of KEEPS (from one set on the web, the next above it)"""
+        keep = self.lib.keep()
+        self.lib.set_keep(next((k for k in KEEPS if k > keep), KEEPS[0]))
+
     def set_fm1(self, which):
         self.studio.settings["library_fm1"] = which
         self.studio.save()
@@ -617,6 +649,8 @@ class FM1Screen:
             x, y = 4 + (i % 4) * 118, 78 + (i // 4) * 48
             action = (lambda p=page: self.open(p)) if page else (lambda: self.run(["backup"]))
             ui.button(img, d, (x, y, x + 114, y + 42), label, action, key=f"fm1-{label}")
+        x, y = 4 + (len(MENU) % 4) * 118, 78 + (len(MENU) // 4) * 48
+        ui.button(img, d, (x, y, x + 114, y + 42), f"KEEP {self.lib.keep()}", self.next_keep, key="fm1-keep")
         d.rectangle((4, 180, 476, 270), fill=t.grey[0])
         job = self.lib.job
         running = bool(job) and job.get("state") == "running"
