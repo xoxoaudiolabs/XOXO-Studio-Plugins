@@ -3,10 +3,12 @@
 The FM-1 Companion's library.py (xoxoaudiolabs/FM-1-Companion), cut down to the FM-1's jobs for the plug-in: the
 Studio has its own samples, recordings and SD import, and its own updates.
 
-  fm1lib.py [--fm1 A-D] [--level full|-3 dB|-6 dB] COMMAND ...
+  fm1lib.py [--fm1 A-D] [--level full|-3 dB|-6 dB] [--keep N] COMMAND ...
                                       --fm1: which FM-1 with two or more plugged in (A: the lowest USB port), --level: a
-                                      sample's loudest point in its slot (-6 dB unless said)
-  fm1lib.py backup [--auto]           back up the FM-1 (SLOOP 2.3+) into ~/fm1-library/backups
+                                      sample's loudest point in its slot (-6 dB unless said), --keep: how many of its
+                                      own backups (auto, and the safety ones before a write) are kept (1-100, 20)
+  fm1lib.py backup [--auto]           back up the FM-1 into ~/fm1-library/backups: SLOOP 2.3+, Clipper, sloopDX,
+                                      Felucca, JIANT, Melodee, Jangada (sloop.py), Baud Girl's FM-1+VA (baudgirl.py)
   fm1lib.py restore FILE              a whole backup back onto the FM-1 (backs up first)
   fm1lib.py load-project FILE SRC TARGET
                                       a project into the FM-1: SRC working/A-D in a backup (- for a project
@@ -17,12 +19,13 @@ Studio has its own samples, recordings and SD import, and its own updates.
                                       ~/fm1-library/songs
   fm1lib.py song-load FILE            a song back onto the FM-1 (backs up first)
   fm1lib.py dx7-send FILE [VOICE]     a DX7 bank (.syx), or one voice of it (1-32), to an FM-1 firmware that
-                                      takes them; not to SLOOP or Clipper, which don't
+                                      takes them (a bank into sloopDX's bank in use); not to SLOOP, Clipper or Felucca
+  fm1lib.py dx7-read                  the sound a stock FM-1 plays now, as a DX7 voice in ~/fm1-library/patches
   fm1lib.py load-sample SLOT NAME WAV...
                                       WAV files into USR SLOT (1-4), one zone each
   fm1lib.py flash FILE.fwsc           install a firmware package (backs up first when it can)
   fm1lib.py fetch sloop|clipper       download the newest SLOOP or Clipper release into ~/fm1-library/firmware
-  fm1lib.py identify                  what the FM-1 runs ("SLOOP 2.8"), as a job
+  fm1lib.py identify                  what the FM-1 runs ("SLOOP 2.8", "FM-1+VA 102", "Stock 15"), as a job
   fm1lib.py info                      what the FM-1 runs, as JSON
   fm1lib.py label                     what the FM-1 runs in a few words ("SLOOP 2.8", or its USB name), quietly
   fm1lib.py list                      the library as JSON
@@ -51,7 +54,8 @@ SUFFIXES = {"backups": (".json",), "projects": (".json",), "songs": (".json",), 
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
 STATE, LOCK = RUNTIME / "fm1-companion-job.json", RUNTIME / "fm1-companion-job.lock"
 FIRMWARE = RUNTIME / "fm1-companion-firmware.json"     # what the FM-1 last said it runs
-KEEP_AUTO = 20
+KEEP_AUTO = 20                               # its own backups kept unless --keep says (1-100)
+BOX_MADE = re.compile(r"_(auto|before-[a-z0-9-]+)\.json$")    # write_backup's kinds but "manual" (a tapped backup)
 FIRMWARES = {"sloop": ("SLOOP", "isod89/sloop-fm1"),            # isod89's firmwares, both based on Felucca
              "clipper": ("Clipper", "isod89/clipper-fm1")}       # (Clipper: experimental)
 RELEASES = "https://api.github.com/repos/{}/releases?per_page=10"
@@ -61,6 +65,7 @@ SAMPLE_LEVELS = {"full": 30000, "-3 dB": 23197, "-6 dB": 16422}
 LETTERS = "ABCD"                             # the Studio's FM-1s, by USB port
 FM1 = "A"                                    # --fm1
 PEAK = SAMPLE_LEVELS["-6 dB"]                # --level
+KEEP = KEEP_AUTO                             # --keep
 
 
 def folder(name):
@@ -85,7 +90,7 @@ class Job:
     def __init__(self, name):
         self.name, self.lock = name, None
         self.status = {"job": name, "state": "running", "step": "", "percent": None, "message": "",
-                       "started": time.time(), "pid": os.getpid()}
+                       "started": time.time(), "pid": os.getpid(), "fm1": FM1}
 
     def __enter__(self):
         RUNTIME.mkdir(parents=True, exist_ok=True)
@@ -172,18 +177,46 @@ def connect():
 
 def firmware_label():
     """"SLOOP 2.8" from what the FM-1 last said ("FELUCCA SLOOP 2.8"); None if nothing has asked it yet. Its
-    USB name says Felucca whatever it runs."""
+    USB name says Felucca whatever it runs. One without SLOOP's protocol: its handshake's ("FM-1+VA 102",
+    "Stock 15": note_firmware)"""
     try:
-        return short_label(json.loads(FIRMWARE.read_text())["firmware"])
-    except (OSError, ValueError, KeyError, TypeError):
+        seen = json.loads(FIRMWARE.read_text())
+        return str(seen["label"]) if seen.get("label") else short_label(seen["firmware"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
 
 
+def note_firmware(ident):
+    """an FM-1 that answers M-VAVE's handshake but not SLOOP's protocol: what it runs (its label: "FM-1+VA 102",
+    "Stock 15"); None if it's neither"""
+    import mvave
+    kind = mvave.kind(ident)
+    if kind not in ("baudgirl", "stock"):
+        return None
+    label = f"{'FM-1+VA' if kind == 'baudgirl' else 'Stock'} {ident.version}"
+    try:
+        FIRMWARE.write_text(json.dumps({"firmware": ident.text, "label": label}))
+    except OSError:
+        pass
+    return label
+
+
 def label():
-    """what this FM-1 runs, for the Studio's HOME ("SLOOP 2.8"): asked over its editor SysEx, else (a firmware
-    that doesn't answer it: stock, Felucca) its sound card's USB name ("FELUCCA"); None without the FM-1"""
+    """what this FM-1 runs, for the Studio's HOME ("SLOOP 2.8"): asked over its editor SysEx, else M-VAVE's
+    handshake ("FM-1+VA 102", "Stock 15"), else its sound card's USB name ("FELUCCA"); None without the FM-1"""
     try:
         return short_label(str(sloop.Sloop(sloop.Link(card=target_card())).version))
+    except sloop.SloopError:
+        pass
+    try:
+        import mvave
+        link = sloop.Link(card=target_card())
+        try:
+            said = note_firmware(mvave.identity(link, tries=1))
+        finally:
+            link.close()
+        if said:
+            return said
     except sloop.SloopError:
         pass
     cards, text = sloop.fm1_cards(), ""
@@ -220,15 +253,19 @@ def write_backup(data, kind):
     when = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     path = folder("backups") / f"{when}_{slug(data.get('firmware'))}_{kind}.json"
     sloop.save_json(path, data)
-    if kind == "auto":
+    if kind != "manual":
         prune_auto()
     return path
 
 
-def prune_auto():
-    autos = sorted(folder("backups").glob("*_auto.json"))
-    for old in autos[:-KEEP_AUTO]:
-        old.unlink(missing_ok=True)
+def prune_auto(keep=None):
+    """its own backups (auto, and the safety ones before a restore or a load) beyond the newest --keep: deleted. A
+    tapped backup is the user's: never. -> how many went"""
+    found = sorted(p for p in folder("backups").iterdir() if BOX_MADE.search(p.name))
+    old = found[:-(keep or KEEP)]
+    for path in old:
+        path.unlink(missing_ok=True)
+    return len(old)
 
 
 # ---------------------------------------------------------------- the jobs
@@ -236,7 +273,14 @@ def prune_auto():
 def job_backup(auto=False):
     with Job("backup") as job:
         job.step("Connecting")
-        dev = connect()
+        try:
+            dev = connect()
+        except sloop.SloopError as e:
+            if e.code != "noreply":
+                raise
+            return fm1va_backup(job, auto)     # (no SLOOP protocol: Baud Girl's FM-1+VA, if it's that)
+        if sloop.family(dev.version) == "x0x":
+            raise sloop.SloopError("family", "X0X on an FM-1: its backups aren't in the plug-in yet")
         dev.require_backup()
         data = dev.backup(job.progress("Backing up"))
         if auto:                               # timed backups: no new file when nothing changed
@@ -249,6 +293,50 @@ def job_backup(auto=False):
         job.done(f"Backed up {dev.version}", file=path.name)
 
 
+def fm1va_link():
+    """(link, identity) of an FM-1 running Baud Girl's FM-1+VA (mvave.py's handshake); SloopError otherwise"""
+    import mvave
+    link = sloop.Link(card=target_card())
+    ident = mvave.identity(link)
+    if mvave.kind(ident) != "baudgirl":
+        link.close()
+        raise sloop.SloopError("noreply", f"{ident.text if ident else 'the FM-1'}: no firmware the library knows")
+    return link, ident
+
+
+def fm1va_backup(job, auto=False):
+    """its 128 presets (baudgirl.py) as a backup file of their own format, in the backups folder"""
+    import baudgirl
+    link, ident = fm1va_link()
+    note_firmware(ident)
+    try:
+        data = baudgirl.backup(link, f"FM-1+VA {ident.text}", job.progress("Backing up"))
+    finally:
+        link.close()
+    if auto:
+        latest = newest_auto()
+        if latest and same_content(latest, data):
+            job.done(f"No changes since {latest.name[11:13]}:{latest.name[13:15]}", file=latest.name, unchanged=True)
+            return
+    path = write_backup(data, "auto" if auto else "manual")
+    job.done(f"Backed up {ident.text}'s presets", file=path.name)
+
+
+def fm1va_restore(job, file, data):
+    """an fm1va-presets backup back: checked, the presets backed up first, then each written and read back"""
+    import baudgirl
+    baudgirl.presets_of(data)                  # damaged files stop here, before anything is written
+    job.step("Connecting")
+    link, ident = fm1va_link()
+    try:
+        before = write_backup(baudgirl.backup(link, f"FM-1+VA {ident.text}", job.progress("Backing up first")),
+                              "before-restore")
+        baudgirl.restore(link, data, job.progress("Restoring"))
+    finally:
+        link.close()
+    job.done(f"Restored {Path(file).name}", before=before.name)
+
+
 def newest_auto():
     autos = sorted(folder("backups").glob("*_auto.json"))
     return autos[-1] if autos else None
@@ -256,6 +344,12 @@ def newest_auto():
 
 def same_content(path, data):
     """the backup file holds exactly the objects in data (dates and firmware strings aside)"""
+    if data.get("format") == "fm1va-presets":
+        import baudgirl
+        try:
+            return baudgirl.presets_of(sloop.load_json(path)) == baudgirl.presets_of(data)
+        except sloop.SloopError:
+            return False
     try:
         return sloop.objects_of(sloop.load_json(path)) == sloop.objects_of(data)
     except sloop.SloopError:
@@ -265,6 +359,8 @@ def same_content(path, data):
 def job_restore(file):
     with Job("restore") as job:
         backup = sloop.load_json(file)
+        if backup.get("format") == "fm1va-presets":   # Baud Girl's FM-1+VA's presets
+            return fm1va_restore(job, file, backup)
         sloop.objects_of(backup)               # damaged files stop here, before anything is written
         job.step("Connecting")
         dev = connect()
@@ -329,8 +425,9 @@ def job_song_load(file):
 
 
 def job_dx7_send(file, voice=None):
-    """a DX7 bank, or one of its voices (1-32), to the FM-1's MIDI: only the two standard DX7 messages (dx7.py).
-    SLOOP and Clipper answer SLOOP's INFO and don't take DX7 SysEx: not sent to them"""
+    """a DX7 bank, or one of its voices (1-32), to the FM-1's MIDI: only the two standard DX7 messages (dx7.py); a
+    bank onto sloopDX goes into its bank in use, by SLOOP's commands. SLOOP, Clipper and Felucca answer SLOOP's INFO
+    and don't take DX7 SysEx: not sent to them. Only to --fm1's FM-1 (the Pocket tries its other one too)"""
     import dx7
     with Job("dx7-send") as job:
         try:
@@ -341,14 +438,23 @@ def job_dx7_send(file, voice=None):
         job.step("Connecting")
         link = sloop.Link(card=target_card())
         try:
+            dev = None
             try:
-                version = sloop.Sloop(link).version
+                dev = sloop.Sloop(link)
+                version = dev.version
             except sloop.SloopError as e:
                 if e.code != "noreply":
                     raise
                 version = None                 # (no SLOOP protocol: another firmware)
-            if sloop.family(version):
-                raise sloop.SloopError("family", f"{version} doesn't take DX7 patches (SLOOP has its own FM6 bank)")
+            if sloop.family(version) == "sloopdx" and voice is None and what["kind"] == "bank":
+                before = safety_backup(dev, job, "before-dx7")    # (BANK_BEGIN empties the bank at once)
+                job.step("Sending")
+                dev.write_dx_bank(b"".join(dx7.read(Path(file).read_bytes())[1]))
+                job.done(f"Loaded {Path(file).stem} into sloopDX's bank in use", before=before and before.name)
+                return
+            if sloop.family(version) not in (None, "jangada", "melodee"):   # (these two take DX7 SysEx)
+                raise sloop.SloopError("family", f"{version} doesn't take DX7 SysEx (it has its own bank, on its "
+                                                 f"editor)")
             job.step("Sending")
             link.out.send(link.mido.Message("sysex", data=list(message[1:-1])))
             time.sleep(0.5)                    # (a bank is 4 KB: let it go out before the port closes)
@@ -358,6 +464,29 @@ def job_dx7_send(file, voice=None):
             job.done(f"Sent {Path(file).stem}: 32 voices (on the FM-1, pick the bank it goes to)")
         else:
             job.done(f"Sent {what['voices'][0 if voice is None else voice - 1] or 'the voice'}")
+
+
+def job_dx7_read():
+    """the sound a stock FM-1 plays now, as a DX7 single-voice .syx in the patches folder. Only M-VAVE's stock
+    firmware is asked (mvave.py): nothing else is sent its read command"""
+    import dx7
+    import mvave
+    with Job("dx7-read") as job:
+        job.step("Connecting")
+        link = sloop.Link(card=target_card())
+        try:
+            ident = mvave.identity(link)
+            if mvave.kind(ident) != "stock":
+                raise sloop.SloopError("family", f"{ident.text if ident else 'this FM-1'}: reading its sound needs "
+                                                 f"M-VAVE's stock firmware")
+            job.step("Reading the sound")
+            voice = mvave.read_voice(link)
+        finally:
+            link.close()
+        name = dx7.voice_name(voice).strip() or "voice"
+        path = folder("patches") / f"{datetime.now().strftime('%Y-%m-%d_%H%M%S')}_{slug(name)}.syx"
+        path.write_bytes(dx7.voice_message(voice))
+        job.done(f"Saved {name} ({ident.text})", file=path.name)
 
 
 def job_load_sample(slot, name, wavs):
@@ -473,7 +602,12 @@ def listing():
             entry = {"name": path.name, "bytes": path.stat().st_size, "date": path.stat().st_mtime}
             if name == "backups":
                 try:
-                    entry.update(sloop.describe(sloop.load_json(path)))
+                    data = sloop.load_json(path)
+                    if data.get("format") == "fm1va-presets":
+                        import baudgirl
+                        entry.update(baudgirl.describe(data))
+                    else:
+                        entry.update(sloop.describe(data))
                 except sloop.SloopError:
                     entry["damaged"] = True
             elif name == "songs":
@@ -503,15 +637,19 @@ def listing():
 
 
 def options(argv):
-    """--fm1 A|B and --level LEVEL off the front of argv -> the rest"""
-    global FM1, PEAK
-    while argv and argv[0] in ("--fm1", "--level"):
+    """--fm1 A-D, --level LEVEL and --keep N off the front of argv -> the rest"""
+    global FM1, PEAK, KEEP
+    while argv and argv[0] in ("--fm1", "--level", "--keep"):
         if len(argv) < 2:
             raise ValueError(f"{argv[0]} needs a value")
         if argv[0] == "--fm1":
             if len(argv[1]) != 1 or argv[1] not in LETTERS:
                 raise ValueError(f"--fm1 is {LETTERS[0]} to {LETTERS[-1]}")
             FM1 = argv[1]
+        elif argv[0] == "--keep":
+            if not argv[1].isdigit() or not 1 <= int(argv[1]) <= 100:
+                raise ValueError("--keep is 1 to 100")
+            KEEP = int(argv[1])
         else:
             if argv[1] not in SAMPLE_LEVELS:
                 raise ValueError(f"--level is {', '.join(SAMPLE_LEVELS)}")
@@ -544,6 +682,8 @@ def main(argv=None):
             job_song_backup(args[0] if args else None)
         elif command == "song-load" and len(args) == 1:
             job_song_load(args[0])
+        elif command == "dx7-read" and not args:
+            job_dx7_read()
         elif command == "dx7-send" and len(args) in (1, 2):
             job_dx7_send(args[0], int(args[1]) if len(args) == 2 else None)
         elif command == "load-sample" and len(args) >= 3:
@@ -554,7 +694,21 @@ def main(argv=None):
             job_fetch(args[0])
         elif command == "identify":
             with Job("identify") as job:
-                dev = connect()
+                try:
+                    dev = connect()
+                except sloop.SloopError as e:
+                    if e.code != "noreply":
+                        raise
+                    import mvave              # (no SLOOP protocol: stock or Baud Girl's, by M-VAVE's handshake)
+                    link = sloop.Link(card=target_card())
+                    try:
+                        said = note_firmware(mvave.identity(link))
+                    finally:
+                        link.close()
+                    if not said:
+                        raise
+                    job.done(said)
+                    return 0
                 job.done(firmware_label() or str(dev.version))
         elif command == "label":              # quietly: no job, no state file (the plug-in's HOME detail)
             print(label() or "")

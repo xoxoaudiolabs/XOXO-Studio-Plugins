@@ -59,10 +59,14 @@ def test_library_jobs():
     assert fake.objects[0] == fake.objects[5]
     fm1lib.job_load_sample(4, "drum", [write_wav(TMP / "hit.wav", 0.1)])
     assert fake.objects[35][8:12] == b"DRUM"
-    for k in range(25):                                              # pruning keeps the newest 20 auto backups
+    for k in range(25):                    # pruning keeps the newest 20 of its own (auto, before-...), not a tapped one
         (TMP / "library" / "backups" / f"2020-01-01_0000{k:02d}_x_auto.json").write_text("{}")
+    manual = len(list((TMP / "library" / "backups").glob("*_manual.json")))
+    own = lambda: [p for p in (TMP / "library" / "backups").iterdir() if fm1lib.BOX_MADE.search(p.name)]  # noqa: E731
     fm1lib.prune_auto()
-    assert len(list((TMP / "library" / "backups").glob("*_auto.json"))) == 20
+    assert len(own()) == 20 and len(list((TMP / "library" / "backups").glob("*_manual.json"))) == manual
+    assert [p for p in own() if "before-" in p.name]                 # (the newest: today's, kept over 2020's)
+    assert fm1lib.prune_auto(keep=3) == 17 and len(own()) == 3
     listing = fm1lib.listing()
     assert sorted(listing) == sorted(fm1lib.FOLDERS)
     assert listing["projects"][0]["title"] == "Night Drive"
@@ -108,9 +112,15 @@ def test_firmware_label():
 
 
 def test_label():
-    """HOME's few words: what the FM-1 says it runs, else its sound card's USB name"""
+    """HOME's few words: what the FM-1 says it runs, else M-VAVE's handshake, else its sound card's USB name"""
+    import fm1_install
+    import mvave
     assert fm1lib.short_label("FELUCCA SLOOP 2.8") == "SLOOP 2.8"
-    real = sloop.Sloop, sloop.fm1_cards, sloop.CARDS, sloop.Link
+    real = sloop.Sloop, sloop.fm1_cards, sloop.CARDS, sloop.Link, mvave.identity
+
+    class Card(int):
+        def close(self):
+            pass
 
     class Says:
         def __init__(self, link):
@@ -123,11 +133,15 @@ def test_label():
     cards = TMP / "cards"
     cards.write_text(" 2 [Felucca        ]: USB-Audio - Felucca\n 3 [Felucca_1      ]: USB-Audio - Felucca\n")
     try:
-        sloop.fm1_cards, sloop.CARDS, sloop.Link = (lambda text=None: [3, 2]), cards, (lambda card=None: card)
+        sloop.fm1_cards, sloop.CARDS = (lambda text=None: [3, 2]), cards
+        sloop.Link = lambda card=None: Card(card or 0)
         sloop.Sloop = Says
         assert fm1lib.label() == "SLOOP 2.8"
         sloop.Sloop = Silent
         fm1lib.FM1 = "B"
+        mvave.identity = lambda link, tries=2: fm1_install.Identity("FM-1_102", "FM-1", 102)
+        assert fm1lib.label() == "FM-1+VA 102"                   # Baud Girl's: by M-VAVE's handshake
+        mvave.identity = lambda link, tries=2: None
         assert fm1lib.label() == "FELUCCA"                       # card 2: "Felucca" (A's would be "Felucca_1")
         fm1lib.FM1 = "D"
         try:
@@ -136,4 +150,4 @@ def test_label():
             pass                                                 # (no FM-1 D: target_card says so)
     finally:
         fm1lib.FM1 = "A"
-        sloop.Sloop, sloop.fm1_cards, sloop.CARDS, sloop.Link = real
+        sloop.Sloop, sloop.fm1_cards, sloop.CARDS, sloop.Link, mvave.identity = real
