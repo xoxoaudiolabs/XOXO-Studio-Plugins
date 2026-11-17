@@ -5,13 +5,17 @@ studio, by XOXO Audio Labs. Each folder is one plug-in for the Studio's plug-in 
 (`fm1-bt-bridge/plugins.py` in XOXO Studio; the design is its `docs/PLUGINS.md`): a `plugin.json` manifest and its
 Python. Anyone can write plug-ins the same way; these are XOXO Audio Labs' own.
 
-XOXO Studio's built-in features (XO-4, the DJ decks, the Pocket link, the computer link) aren't here: they come
-with the Studio.
+The sampler, the sample editor and the DJ decks were part of XOXO Studio until 2026-11-17; they're here now, plug-ins
+like the rest, and the Studio runs without them. Its sequencer (SEQ), the Pocket link and the computer link are the
+Studio's own.
 
 ## The plug-ins
 
 | Plug-in | Version | Status | What it does |
 |---|---|---|---|
+| [sampler](sampler/) | 1.0 | Tried on a PC; listed (off) on a Studio | **PADS**: the 16-pad sampler: kits (the 808 KIT), pad pages, sampling, note repeat, sixteen punch-in FX; PADS in the mixer; the routes' SMP notes (36–51) play it. Switching it starts the Studio app again |
+| [editor](editor/) | 1.0 | Tried on a PC; listed (off) on a Studio | **EDITOR**: the touch sample editor (trim, fades, normalize, reverse, into a new sample or a pad); a pad's TRIM; the web page's Editor |
+| [decks](decks/) | 1.0 | Tried on a PC; listed (off) on a Studio | **DECKS**: two DJ decks for the Studio DJ Music folder or a USB drive, with the Hercules DJControl Inpulse 200 MK2 or a learnt controller; DECKS in the mixer; the web page's DJ music |
 | [synths](synths/) | 0.1.1 | Tried on a Studio | **SYNTH A**: FluidSynth playing a SoundFont, a sound source in the mixer and a MIDI device in the routes; its SoundFont, preset and level on its screen (MORE › PLUG-INS › SYNTHS) |
 | [tester-tools](tester-tools/) | 0.2.0 | Tried on a Studio | **LATENCY**: a note sent to a MIDI device, its sound timed coming back into the Studio, five times: the round trip, kept with the Studio's latency step (MORE › PLUG-INS › TESTER, or the web page) |
 | [fm1-companion](fm1-companion/) | 0.5.0 | Experimental: not yet tried with a real FM-1 | The FM-1 on the Studio: up to four FM-1s, FM-1 A to D by USB port, as sound sources and MIDI devices; the FM-1 library (backups, projects, songs, sample slots, DX7 patches, firmware) on its screen and the web page, for SLOOP, Clipper, sloopDX, Felucca, JIANT, Melodee, Jangada, Baud Girl's FM-1+VA and M-VAVE's stock firmware; a linked FM-1 Companion Pocket's FM-1s as FM-1 E to G. Not part of the XOXO Studio 0.1 beta |
@@ -41,6 +45,13 @@ carries on. Some plug-ins need packages of their own (Synths: FluidSynth and a S
 ## Tested and not yet tried
 
 Only what has been tried is listed as tried. The details are in each plug-in's README.
+
+### Sampler 1.0, Sample editor 1.0, DJ decks 1.0
+
+- **Tested** on a PC, against XOXO Studio's own code (each one's `tests`), and on a Studio (2026-11-17, installed
+  by XOXO Studio's installer before they moved here): listed in MORE › PLUG-INS, off.
+- **Not yet tried:** switching any of them on at a Studio and using it there; installing them from this
+  repository on a Studio.
 
 ### Synths 0.1.1
 
@@ -86,7 +97,20 @@ python -m pytest synths/tests
 python -m pytest tester-tools/tests
 ```
 
-(one run each: each suite sets its own library and runtime folders when it's loaded). `tests` is FM-1 Companion's;
+```bash
+python -m pytest sampler/tests
+```
+
+```bash
+python -m pytest editor/tests
+```
+
+```bash
+python -m pytest decks/tests
+```
+
+(one run each: each suite sets its own library and runtime folders when it's loaded; the sampler's, the editor's and
+the decks' want XOXO Studio from 2026-11-17 or later). `tests` is FM-1 Companion's;
 its linked-Pocket test also wants a clone of [FM-1 Companion](https://github.com/xoxoaudiolabs/FM-1-Companion)
 next to this repository (or `FM1_COMPANION=` its folder) and is skipped without one.
 
@@ -106,3 +130,12 @@ This repository is GPL-3.0 (see [LICENSE](LICENSE)), like XOXO Studio.
   [Zynthian](https://zynthian.org) does, but isn't Zynthian and isn't made by its people. It has its own copy of
   the GPL-3.0 ([synths/LICENSE](synths/LICENSE)).
 - **Tester Tools** uses PipeWire's `pw-record`, from the Studio's own install.
+- **Sampler**: its punch-in FX are from [SLOOP](https://github.com/isod89/sloop-fm1) by isod89 (GPL-3.0),
+  rewritten in Python; its 808 KIT is Michael Fischer's TR-808 recordings (1994), from
+  [tidalcycles/sounds-tr808-fischer](https://github.com/tidalcycles/sounds-tr808-fischer), CC0 1.0
+  ([sampler/kits/808/CREDITS.md](sampler/kits/808/CREDITS.md)). Not affiliated with Roland; TR-808 is a trademark
+  of Roland Corporation.
+- **Sample editor** is XOXO Audio Labs' own code.
+- **DJ decks** is XOXO Audio Labs' own code; it runs libsndfile (LGPL-2.1) and, where installed, ffmpeg, from
+  Raspberry Pi OS, neither copied here. Not affiliated with Hercules; DJControl Inpulse is Hercules's (Guillemot
+  Corporation).
